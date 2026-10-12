@@ -1,13 +1,14 @@
-import { cloneElement, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { cloneElement, useEffect, useReducer, useRef, useState } from 'react'
 import { Building2, Check, ChevronLeft, ChevronRight, CircleAlert, Plus, Trash2 } from 'lucide-react'
 import SetupLayout from '../../layouts/SetupLayout'
 import {
   PREDEFINED_COMMON_AREAS,
   SETUP_STEPS,
   createInitialWizardState,
-  generateTowerUnits,
-  generateUnits,
-  summarizeUnitsByFloor,
+  getTowerUnitCount,
+  getTowerUnitPreview,
+  getTotalUnitCount,
+  summarizeTowerUnits,
   validateStepDetails,
   wizardReducer,
 } from '../../features/setupWizard/verticalSetup'
@@ -55,7 +56,7 @@ function TowerCard({ tower, index, canRemove, dispatch, errors }) {
   const update = (field) => (event) => dispatch({ type: 'UPDATE_TOWER', id: tower.id, field, value: event.target.value })
   const key = (field) => `tower.${tower.id}.${field}`
   const id = (field) => `setup-${tower.id}-${field}`
-  const units = generateTowerUnits(tower)
+  const preview = getTowerUnitPreview(tower)
   return <article className="setup-tower-card">
     <header><div><span>Torre {index + 1}</span><h3>{tower.name.trim() || 'Nova torre'}</h3></div>{canRemove && <button className="setup-icon-button" type="button" aria-label={`Remover ${tower.name || `Torre ${index + 1}`}`} onClick={() => dispatch({ type: 'REMOVE_TOWER', id: tower.id })}><Trash2 size={18} /></button>}</header>
     <div className="setup-form-grid setup-form-grid--tower">
@@ -67,7 +68,7 @@ function TowerCard({ tower, index, canRemove, dispatch, errors }) {
       <Field label="Quantidade de dígitos do apartamento" id={id('unitDigits')} fieldKey={key('unitDigits')} error={findError(errors, key('unitDigits'))} hint="2 dígitos geram 01; 3 dígitos geram 001."><select value={tower.unitDigits} onChange={update('unitDigits')}><option value="1">1 dígito</option><option value="2">2 dígitos</option><option value="3">3 dígitos</option><option value="4">4 dígitos</option></select></Field>
       <Field label="Separador entre andar e apartamento" id={id('separator')} fieldKey={key('separator')} hint="Opcional. Com hífen, por exemplo, o resultado será 1-01."><input value={tower.separator} maxLength="3" onChange={update('separator')} placeholder="Sem separador" /></Field>
     </div>
-    <p className="setup-pattern">Exemplo da numeração: <strong>{units[0]?.number || '—'}</strong> até <strong>{units.at(-1)?.number || '—'}</strong> · {units.length} unidades</p>
+    <p className="setup-pattern">Exemplo da numeração: <strong>{preview.first || '—'}</strong> até <strong>{preview.last || '—'}</strong> · {preview.total} unidades</p>
   </article>
 }
 
@@ -76,16 +77,15 @@ function TowersStep({ towers, dispatch, errors }) {
 }
 
 function UnitsStep({ towers }) {
-  const total = generateUnits(towers).length
+  const total = getTotalUnitCount(towers)
   return <div className="setup-stack"><div className="setup-total"><span>Total previsto</span><strong>{total}</strong><small>unidades em {towers.length} {towers.length === 1 ? 'torre' : 'torres'}</small></div>
     <p className="setup-preview-guidance">Confira exemplos reais da numeração. Em configurações grandes, mostramos uma amostra sem alterar o total gerado.</p>
     {towers.map((tower) => {
-      const units = generateTowerUnits(tower)
-      const summary = summarizeUnitsByFloor(units)
-      return <article className="setup-preview-card" key={tower.id}><header><div><h3>{tower.name}</h3><p>{tower.floorCount} andares · {tower.unitsPerFloor} apartamentos por andar</p></div><strong>{units.length} unidades</strong></header>
+      const summary = summarizeTowerUnits(tower)
+      return <article className="setup-preview-card" key={tower.id}><header><div><h3>{tower.name}</h3><p>{tower.floorCount} andares · {tower.unitsPerFloor} apartamentos por andar</p></div><strong>{summary.total} unidades</strong></header>
         <div className="setup-floor-list">{summary.floors.map((floor) => <div className="setup-floor-row" key={floor.floor}><strong>Andar {floor.floor}</strong><div>{floor.numbers.map((number) => <span key={number}>{number}</span>)}{floor.omittedUnits > 0 && <em>+{floor.omittedUnits} unidades</em>}</div></div>)}</div>
         {summary.omittedFloors > 0 && <p className="setup-preview-note">{summary.omittedFloors} {summary.omittedFloors === 1 ? 'andar intermediário foi omitido' : 'andares intermediários foram omitidos'} desta prévia.</p>}
-        <p className="setup-preview-range">Primeira unidade: <strong>{units[0]?.number || '—'}</strong> · Última unidade: <strong>{units.at(-1)?.number || '—'}</strong></p>
+        <p className="setup-preview-range">Primeira unidade: <strong>{summary.first || '—'}</strong> · Última unidade: <strong>{summary.last || '—'}</strong></p>
       </article>
     })}
   </div>
@@ -113,11 +113,11 @@ function SectionHeading({ children, onEdit, label }) {
   return <div className="setup-summary-heading"><h3>{children}</h3><button type="button" className="setup-edit-button" onClick={onEdit} aria-label={`Editar ${label}`}>Editar</button></div>
 }
 
-function SummaryStep({ draft, units, reviewed, dispatch, onEdit }) {
+function SummaryStep({ draft, totalUnits, reviewed, dispatch, onEdit }) {
   const areas = [...draft.commonAreas, ...draft.customAreas.map((area) => area.name)]
   return <div className="setup-summary"><div className="setup-review-notice"><CircleAlert size={20} /><p><strong>Esta é apenas uma revisão local.</strong> Nenhum dado será enviado ou salvo no banco enquanto a integração com o backend não estiver disponível.</p></div>
     <section><SectionHeading onEdit={() => onEdit(0)} label="dados do condomínio">Condomínio</SectionHeading><dl><div><dt>Nome</dt><dd>{draft.condominium.name}</dd></div><div><dt>Endereço</dt><dd>{draft.condominium.address}</dd></div><div><dt>Cidade/UF</dt><dd>{draft.condominium.city} — {draft.condominium.state}</dd></div><div><dt>Modelo</dt><dd>Condomínio Vertical</dd></div></dl></section>
-    <section><SectionHeading onEdit={() => onEdit(2)} label="torres e unidades">Estrutura residencial</SectionHeading><div className="setup-summary-towers">{draft.towers.map((tower) => <div key={tower.id}><strong>{tower.name}</strong><span>{tower.floorCount} andares</span><span>{tower.unitsPerFloor} unidades por andar</span><span>{generateTowerUnits(tower).length} unidades geradas</span></div>)}</div><p className="setup-summary-total"><strong>{units.length}</strong> unidades no total</p></section>
+    <section><SectionHeading onEdit={() => onEdit(2)} label="torres e unidades">Estrutura residencial</SectionHeading><div className="setup-summary-towers">{draft.towers.map((tower) => <div key={tower.id}><strong>{tower.name}</strong><span>{tower.floorCount} andares</span><span>{tower.unitsPerFloor} unidades por andar</span><span>{getTowerUnitCount(tower)} unidades geradas</span></div>)}</div><p className="setup-summary-total"><strong>{totalUnits}</strong> unidades no total</p></section>
     <section><SectionHeading onEdit={() => onEdit(4)} label="áreas comuns">Áreas comuns</SectionHeading>{areas.length ? <div className="setup-summary-tags">{areas.map((area) => <span key={area}>{area}</span>)}</div> : <p className="muted">Nenhuma área comum selecionada.</p>}</section>
     <button type="button" className="desktop-primary setup-review-button" onClick={() => dispatch({ type: 'SET_REVIEWED' })}>{reviewed ? <><Check size={18} /> Revisão concluída</> : 'Concluir revisão local'}</button>
     {reviewed && <p className="setup-success" role="status"><Check size={19} /> Configuração revisada. Os dados permanecem somente nesta tela e ainda não foram persistidos.</p>}
@@ -128,7 +128,7 @@ export default function VerticalSetupWizardExperience() {
   const [state, dispatch] = useReducer(wizardReducer, undefined, createInitialWizardState)
   const [errors, setErrors] = useState([])
   const formRef = useRef(null)
-  const units = useMemo(() => generateUnits(state.draft.towers), [state.draft.towers])
+  const totalUnits = getTotalUnitCount(state.draft.towers)
 
   useEffect(() => {
     if (!errors.length) return
@@ -154,7 +154,7 @@ export default function VerticalSetupWizardExperience() {
     <TowersStep towers={state.draft.towers} dispatch={dispatch} errors={errors} />,
     <UnitsStep towers={state.draft.towers} />,
     <AreasStep draft={state.draft} dispatch={dispatch} />,
-    <SummaryStep draft={state.draft} units={units} reviewed={state.reviewed} dispatch={dispatch} onEdit={goTo} />,
+    <SummaryStep draft={state.draft} totalUnits={totalUnits} reviewed={state.reviewed} dispatch={dispatch} onEdit={goTo} />,
   ][state.step]
 
   return <SetupLayout steps={SETUP_STEPS} currentStep={state.step} maxVisited={state.maxVisited} onStepChange={goTo}><section className="setup-page">

@@ -1,11 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  SETUP_LIMITS,
   createInitialWizardState,
   createTower,
   duplicateUnits,
   generateTowerUnits,
   generateUnits,
+  getTotalUnitCount,
+  getTowerUnitCount,
+  getTowerUnitPreview,
+  strictInteger,
+  summarizeTowerUnits,
   summarizeUnitsByFloor,
   validateCommonAreas,
   validateStep,
@@ -26,10 +32,68 @@ test('gera unidades por andar com numeração configurável', () => {
 })
 
 test('múltiplas torres preservam contexto e permitem números iguais entre torres', () => {
-  const units = generateUnits([validTower(), validTower({ id: 'tower-b', name: 'Torre B' })])
+  const towers = [validTower(), validTower({ id: 'tower-b', name: 'Torre B' })]
+  const units = generateUnits(towers)
   assert.equal(units.length, 12)
+  assert.equal(getTotalUnitCount(towers), 12)
   assert.equal(units.filter((unit) => unit.number === '101').length, 2)
   assert.deepEqual(duplicateUnits(units), [])
+})
+
+test('rejeita a representação completa de inteiros inválidos sem conversão parcial', () => {
+  for (const value of ['2.5', '3.7', '1e2', '3abc', '-1', '', 'Infinity', Infinity, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(strictInteger(value), null, `deveria rejeitar ${String(value)}`)
+  }
+  assert.equal(strictInteger('002'), 2)
+  assert.equal(strictInteger(100), 100)
+})
+
+test('rejeita limites, valores perigosos e entradas inválidas antes de gerar unidades', () => {
+  const invalidTowers = [
+    validTower({ floorCount: String(SETUP_LIMITS.floorCount + 1) }),
+    validTower({ unitsPerFloor: String(SETUP_LIMITS.unitsPerFloor + 1) }),
+    validTower({ floorCount: '999999999999999999999999999999' }),
+    validTower({ floorCount: '-3' }),
+    validTower({ floorCount: '0' }),
+    validTower({ floorCount: '2.5' }),
+    validTower({ floorCount: '1e2' }),
+    validTower({ floorCount: 'sem número' }),
+    validTower({ floorCount: Infinity }),
+  ]
+
+  for (const tower of invalidTowers) {
+    assert.ok(validateTowers([tower]).length > 0)
+    assert.equal(getTowerUnitCount(tower), 0)
+    assert.deepEqual(getTowerUnitPreview(tower), { total: 0, first: '', last: '' })
+    assert.deepEqual(generateTowerUnits(tower), [])
+    assert.deepEqual(summarizeTowerUnits(tower).floors, [])
+  }
+})
+
+test('aceita os limites permitidos e preserva a numeração personalizada', () => {
+  const tower = validTower({
+    floorCount: '100',
+    unitsPerFloor: '50',
+    firstFloor: '999',
+    firstUnit: '999',
+    unitDigits: '4',
+    separator: '-',
+  })
+  const preview = getTowerUnitPreview(tower)
+  assert.deepEqual(preview, { total: 5000, first: '999-0999', last: '1098-1048' })
+  assert.deepEqual(validateTowers([tower]), [])
+  assert.equal(getTowerUnitCount(tower), 5000)
+  assert.equal(generateTowerUnits(tower).length, 5000)
+})
+
+test('calcula totais aritmeticamente e bloqueia a materialização acima do limite global', () => {
+  const towers = [
+    validTower({ floorCount: '50', unitsPerFloor: '60' }),
+    validTower({ id: 'tower-b', name: 'Torre B', floorCount: '50', unitsPerFloor: '60' }),
+  ]
+  assert.equal(getTotalUnitCount(towers), 6000)
+  assert.match(validateTowers(towers).join(' '), /5\.000 unidades/)
+  assert.deepEqual(generateUnits(towers), [])
 })
 
 test('bloqueia nomes de torres repetidos e valores inválidos', () => {
@@ -57,6 +121,16 @@ test('resume prévia extensa sem alterar totais nem exemplos reais', () => {
   assert.equal(summary.omittedFloors, 5)
   assert.deepEqual(summary.floors.map((group) => group.floor), [1, 2, 3, 9, 10])
   assert.equal(summary.floors[0].numbers[0], '101')
+  assert.equal(summary.floors[0].numbers.length, 8)
+  assert.equal(summary.floors[0].omittedUnits, 12)
+})
+
+test('resume a prévia diretamente da configuração sem materializar apartamentos', () => {
+  const summary = summarizeTowerUnits(validTower({ floorCount: '10', unitsPerFloor: '20', separator: '-' }))
+  assert.equal(summary.total, 200)
+  assert.equal(summary.first, '1-01')
+  assert.equal(summary.last, '10-20')
+  assert.deepEqual(summary.floors.map((group) => group.floor), [1, 2, 3, 9, 10])
   assert.equal(summary.floors[0].numbers.length, 8)
   assert.equal(summary.floors[0].omittedUnits, 12)
 })

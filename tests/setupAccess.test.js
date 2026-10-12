@@ -53,12 +53,13 @@ test('falha do futuro adaptador permanece erro e nunca libera o Wizard', async (
 })
 
 test('rota permanece protegida, fora do menu e usa layout exclusivo', async () => {
-  const [app, layout, wizard, experience, setupLayout] = await Promise.all([
+  const [app, layout, wizard, experience, setupLayout, styles] = await Promise.all([
     readFile(new URL('../src/App.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/layouts/DesktopLayout.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/features/setupWizard/verticalSetup.js', import.meta.url), 'utf8'),
     readFile(new URL('../src/pages/desktop/VerticalSetupWizardExperience.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/layouts/SetupLayout.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/styles/global.css', import.meta.url), 'utf8'),
   ])
   assert.match(app, /<AdminSetupAccessGate><VerticalSetupWizardPage \/><\/AdminSetupAccessGate>/)
   assert.ok(app.includes('/admin/configuracao-inicial'))
@@ -67,5 +68,6 @@ test('rota permanece protegida, fora do menu e usa layout exclusivo', async () =
   assert.ok(!experience.includes('DesktopLayout'))
   assert.ok(setupLayout.includes('Vamos configurar seu condomínio'))
   assert.ok(!setupLayout.includes('Condomínio Parque das Flores'))
+  assert.match(styles, /\.setup-area-option:focus-within/)
   for (const step of ['Dados do condomínio', 'Modelo residencial', 'Torres', 'Prévia das unidades', 'Áreas comuns', 'Resumo']) assert.ok(wizard.includes(step))
 })

@@ -41,22 +41,76 @@ export function createInitialSetupDraft() {
   }
 }
 
-const integer = (value) => Number.parseInt(String(value), 10)
+export const SETUP_LIMITS = Object.freeze({
+  floorCount: 100,
+  unitsPerFloor: 100,
+  firstFloor: 999,
+  firstUnit: 999,
+  unitDigits: 4,
+  totalUnits: 5000,
+})
+
+export function strictInteger(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null
+  const text = String(value ?? '').trim()
+  if (!/^\d+$/.test(text)) return null
+  const parsed = Number(text)
+  return Number.isSafeInteger(parsed) ? parsed : null
+}
+
 const normalized = (value) => String(value || '').trim().toLocaleLowerCase('pt-BR')
 
+function towerNumbers(tower) {
+  const values = {
+    floorCount: strictInteger(tower.floorCount),
+    unitsPerFloor: strictInteger(tower.unitsPerFloor),
+    firstFloor: strictInteger(tower.firstFloor),
+    firstUnit: strictInteger(tower.firstUnit),
+    unitDigits: strictInteger(tower.unitDigits),
+  }
+  if (Object.entries(values).some(([field, value]) => value === null || value < 1 || value > SETUP_LIMITS[field])) return null
+  const total = values.floorCount * values.unitsPerFloor
+  if (!Number.isSafeInteger(total)) return null
+  return { ...values, total }
+}
+
+const unitNumber = (tower, floor, sequence) => `${floor}${tower.separator || ''}${String(sequence).padStart(strictInteger(tower.unitDigits), '0')}`
+
+export function getTowerUnitCount(tower) {
+  return towerNumbers(tower)?.total || 0
+}
+
+export function getTotalUnitCount(towers) {
+  let total = 0
+  for (const tower of towers) {
+    const count = getTowerUnitCount(tower)
+    if (!count) return 0
+    total += count
+    if (!Number.isSafeInteger(total)) return 0
+  }
+  return total
+}
+
+export function getTowerUnitPreview(tower) {
+  const values = towerNumbers(tower)
+  if (!values || values.total > SETUP_LIMITS.totalUnits) return { total: 0, first: '', last: '' }
+  return {
+    total: values.total,
+    first: unitNumber(tower, values.firstFloor, values.firstUnit),
+    last: unitNumber(tower, values.firstFloor + values.floorCount - 1, values.firstUnit + values.unitsPerFloor - 1),
+  }
+}
+
 export function generateTowerUnits(tower) {
-  const floorCount = integer(tower.floorCount)
-  const unitsPerFloor = integer(tower.unitsPerFloor)
-  const firstFloor = integer(tower.firstFloor)
-  const firstUnit = integer(tower.firstUnit)
-  const unitDigits = integer(tower.unitDigits)
-  if ([floorCount, unitsPerFloor, firstFloor, firstUnit, unitDigits].some((value) => !Number.isInteger(value) || value < 1)) return []
+  const values = towerNumbers(tower)
+  if (!values || values.total > SETUP_LIMITS.totalUnits) return []
+  const { floorCount, unitsPerFloor, firstFloor, firstUnit } = values
 
   const units = []
   for (let floorOffset = 0; floorOffset < floorCount; floorOffset += 1) {
     const floor = firstFloor + floorOffset
     for (let unitOffset = 0; unitOffset < unitsPerFloor; unitOffset += 1) {
-      const sequence = String(firstUnit + unitOffset).padStart(unitDigits, '0')
+      const sequence = String(firstUnit + unitOffset).padStart(values.unitDigits, '0')
       units.push({
         id: `${tower.id}-${floor}-${sequence}`,
         towerId: tower.id,
@@ -69,7 +123,36 @@ export function generateTowerUnits(tower) {
   return units
 }
 
-export const generateUnits = (towers) => towers.flatMap(generateTowerUnits)
+export function generateUnits(towers) {
+  const total = getTotalUnitCount(towers)
+  if (!total || total > SETUP_LIMITS.totalUnits) return []
+  return towers.flatMap(generateTowerUnits)
+}
+
+export function summarizeTowerUnits(tower, { maxFloors = 5, maxUnitsPerFloor = 8 } = {}) {
+  const values = towerNumbers(tower)
+  if (!values || values.total > SETUP_LIMITS.totalUnits) return { total: 0, first: '', last: '', omittedFloors: 0, floors: [] }
+  const allFloors = Array.from({ length: values.floorCount }, (_, offset) => values.firstFloor + offset)
+  const leadingFloors = Math.ceil(maxFloors / 2)
+  const trailingFloors = Math.floor(maxFloors / 2)
+  const visibleFloors = allFloors.length <= maxFloors
+    ? allFloors
+    : [...allFloors.slice(0, leadingFloors), ...allFloors.slice(-trailingFloors)]
+  const preview = getTowerUnitPreview(tower)
+  return {
+    ...preview,
+    omittedFloors: Math.max(0, allFloors.length - visibleFloors.length),
+    floors: visibleFloors.map((floor) => ({
+      floor,
+      total: values.unitsPerFloor,
+      numbers: Array.from(
+        { length: Math.min(values.unitsPerFloor, maxUnitsPerFloor) },
+        (_, offset) => unitNumber(tower, floor, values.firstUnit + offset),
+      ),
+      omittedUnits: Math.max(0, values.unitsPerFloor - maxUnitsPerFloor),
+    })),
+  }
+}
 
 export function summarizeUnitsByFloor(units, { maxFloors = 5, maxUnitsPerFloor = 8 } = {}) {
   const groups = [...units.reduce((map, unit) => {
@@ -90,8 +173,8 @@ export function summarizeUnitsByFloor(units, { maxFloors = 5, maxUnitsPerFloor =
 }
 
 function validatePositiveInteger(value, label, maximum) {
-  const parsed = integer(value)
-  if (!Number.isInteger(parsed) || parsed < 1) return `${label} deve ser um número inteiro maior que zero.`
+  const parsed = strictInteger(value)
+  if (parsed === null || parsed < 1) return `${label} deve ser um número inteiro maior que zero.`
   if (maximum && parsed > maximum) return `${label} deve ser no máximo ${maximum}.`
   return ''
 }
@@ -106,14 +189,14 @@ export function validateTowerDetails(towers) {
     else if (names.has(normalized(tower.name))) errors.push({ field: `tower.${tower.id}.name`, message: `O nome “${tower.name.trim()}” está repetido.` })
     else names.add(normalized(tower.name))
     for (const [field, error] of [
-      ['floorCount', validatePositiveInteger(tower.floorCount, `Quantidade de andares de ${label}`, 100)],
-      ['unitsPerFloor', validatePositiveInteger(tower.unitsPerFloor, `Apartamentos por andar de ${label}`, 100)],
-      ['firstFloor', validatePositiveInteger(tower.firstFloor, `Primeiro andar de ${label}`, 999)],
-      ['firstUnit', validatePositiveInteger(tower.firstUnit, `Primeiro apartamento de ${label}`, 999)],
-      ['unitDigits', validatePositiveInteger(tower.unitDigits, `Quantidade de dígitos de ${label}`, 4)],
+      ['floorCount', validatePositiveInteger(tower.floorCount, `Quantidade de andares de ${label}`, SETUP_LIMITS.floorCount)],
+      ['unitsPerFloor', validatePositiveInteger(tower.unitsPerFloor, `Apartamentos por andar de ${label}`, SETUP_LIMITS.unitsPerFloor)],
+      ['firstFloor', validatePositiveInteger(tower.firstFloor, `Primeiro andar de ${label}`, SETUP_LIMITS.firstFloor)],
+      ['firstUnit', validatePositiveInteger(tower.firstUnit, `Primeiro apartamento de ${label}`, SETUP_LIMITS.firstUnit)],
+      ['unitDigits', validatePositiveInteger(tower.unitDigits, `Quantidade de dígitos de ${label}`, SETUP_LIMITS.unitDigits)],
     ]) if (error) errors.push({ field: `tower.${tower.id}.${field}`, message: error })
   })
-  if (generateUnits(towers).length > 5000) errors.push({ message: 'A prévia está limitada a 5.000 unidades por configuração.' })
+  if (!errors.length && getTotalUnitCount(towers) > SETUP_LIMITS.totalUnits) errors.push({ message: 'A prévia está limitada a 5.000 unidades por configuração.' })
   return errors
 }
 
