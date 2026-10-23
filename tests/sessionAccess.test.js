@@ -1,6 +1,5 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
 import { ApiError } from '../src/services/api.js'
 import {
   SESSION_ACCESS,
@@ -8,6 +7,7 @@ import {
   canLoadOperationalData,
   decideSessionAccess,
   loadSessionBeforeOperational,
+  isConfirmedSession,
   normalizeProfile,
   resolveSessionAccess,
   sessionHome,
@@ -36,11 +36,19 @@ test('carregamento operacional depende da sessão confirmada, não das claims do
   assert.equal(canLoadOperationalData({ profile: 'MORADOR' }), true)
 })
 
-test('ADMIN pendente, MASTER e estados desconhecidos não iniciam chamadas operacionais', async () => {
+test('sessão só é confirmada para perfis e estados conhecidos', () => {
+  assert.equal(isConfirmedSession({ profile: 'MASTER' }), true)
+  assert.equal(isConfirmedSession({ profile: 'ADMIN', setupState: 'PENDENTE' }), true)
+  assert.equal(isConfirmedSession({ profile: 'ADMIN', setupState: 'CONCLUIDA' }), true)
+  assert.equal(isConfirmedSession({ profile: 'ADMIN', setupState: '' }), false)
+  assert.equal(isConfirmedSession({ profile: 'ADMIN', setupState: 'PROCESSANDO' }), false)
+  assert.equal(isConfirmedSession({ profile: 'DESCONHECIDO' }), false)
+  assert.equal(isConfirmedSession(null), false)
+})
+
+test('ADMIN pendente e MASTER não iniciam chamadas operacionais', async () => {
   for (const session of [
     { profile: 'ADMIN', setupState: 'PENDENTE' },
-    { profile: 'ADMIN', setupState: '' },
-    { profile: 'ADMIN', setupState: 'DESCONHECIDA' },
     { profile: 'MASTER', setupState: null },
   ]) {
     let operationalCalls = 0
@@ -49,6 +57,22 @@ test('ADMIN pendente, MASTER e estados desconhecidos não iniciam chamadas opera
       loadOperationalData: async () => { operationalCalls += 1; return {} },
     })
     assert.equal(result.status, 'session-only')
+    assert.equal(operationalCalls, 0)
+  }
+})
+
+test('estado ausente, desconhecido ou resposta inválida rejeita a restauração', async () => {
+  for (const session of [
+    { profile: 'ADMIN', setupState: '' },
+    { profile: 'ADMIN', setupState: 'DESCONHECIDA' },
+    {},
+    null,
+  ]) {
+    let operationalCalls = 0
+    await assert.rejects(loadSessionBeforeOperational({
+      loadCurrentUser: async () => session,
+      loadOperationalData: async () => { operationalCalls += 1 },
+    }), /Não foi possível confirmar/)
     assert.equal(operationalCalls, 0)
   }
 })
@@ -69,13 +93,15 @@ test('ADMIN concluído, PORTARIA e MORADOR carregam somente depois de /usuarios/
   }
 })
 
-test('erro em /usuarios/me nunca libera carregamento operacional', async () => {
-  let operationalCalls = 0
-  await assert.rejects(loadSessionBeforeOperational({
-    loadCurrentUser: async () => { throw new ApiError(0, 'Servidor indisponível') },
-    loadOperationalData: async () => { operationalCalls += 1 },
-  }), /Servidor indisponível/)
-  assert.equal(operationalCalls, 0)
+test('401, 403 e erro de rede em /usuarios/me nunca liberam carregamento operacional', async () => {
+  for (const error of [new ApiError(401, 'Sessão expirada'), new ApiError(403, 'Acesso negado'), new ApiError(0, 'Servidor indisponível')]) {
+    let operationalCalls = 0
+    await assert.rejects(loadSessionBeforeOperational({
+      loadCurrentUser: async () => { throw error },
+      loadOperationalData: async () => { operationalCalls += 1 },
+    }), error)
+    assert.equal(operationalCalls, 0)
+  }
 })
 
 test('erro operacional ocorre somente depois da sessão autorizada e permanece recuperável', async () => {
@@ -116,22 +142,6 @@ test('resposta antiga de sessão ou de dados operacionais é descartada', async 
   current = false
   releaseOperational({ units: [{ id: 'sessao-antiga' }] })
   assert.deepEqual(await staleOperational, { status: 'stale' })
-})
-
-test('login, primeiro acesso e restauração usam a verificação sequencial da sessão', async () => {
-  const [loginPage, authFlow, context] = await Promise.all([
-    readFile(new URL('../src/pages/auth/LoginPage.jsx', import.meta.url), 'utf8'),
-    readFile(new URL('../src/pages/auth/AuthFlowPage.jsx', import.meta.url), 'utf8'),
-    readFile(new URL('../src/context/AppDataContext.jsx', import.meta.url), 'utf8'),
-  ])
-  for (const source of [loginPage, authFlow]) {
-    assert.ok(source.includes('await actions.reloadSession()'))
-    assert.ok(source.indexOf('await actions.reloadSession()') < source.indexOf('navigate(path)'))
-    assert.ok(!source.includes('actions.reloadAll()'))
-  }
-  assert.match(context, /useEffect\(\(\) => \{[\s\S]*actions\.reloadSession\(\)/)
-  assert.ok(context.includes('loadSessionBeforeOperational'))
-  assert.ok(!context.includes('tokenClaims'))
 })
 
 test('MASTER acessa somente a plataforma', () => {

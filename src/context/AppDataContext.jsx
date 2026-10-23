@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { initialAppData } from '../mocks/appData'
 import { apiEnabled, getToken } from '../services/api'
 import { loadSessionBeforeOperational } from '../features/session/sessionAccess'
+import { notifySessionChanged } from '../services/sessionEvents'
 import { alterarStatusMorador, carregarCadastros, carregarUsuarioLogado, criarTorre, excluirUnidade, salvarMorador, salvarUnidade } from '../services/cadastrosApi'
 import { avisosService } from '../services/avisosService'
 import { moradoresService, unidadesService } from '../services/cadastrosService'
@@ -75,6 +76,8 @@ export function AppDataProvider({ children }) {
     async function restoreSession() {
       const request = ++sessionRequest.current
       const token = getToken()
+      const previousToken = operationalAuthorization.current.token
+      if (previousToken && previousToken === token) notifySessionChanged()
       const isCurrent = () => request === sessionRequest.current && token === getToken()
       operationalAuthorization.current = { allowed: false, token, sessionRequest: request }
       ++cadastrosRequest.current
@@ -95,7 +98,11 @@ export function AppDataProvider({ children }) {
           },
           isCurrent,
         })
-        if (!isCurrent() || result.status === 'stale') return
+        if (!isCurrent() || result.status === 'stale') {
+          const staleError = new Error('A sessão mudou durante a verificação. Tente novamente.')
+          staleError.status = 409
+          throw staleError
+        }
         const { currentResident, condominiumName } = result.session
         const operationalAllowed = ['operational', 'operational-error'].includes(result.status)
         operationalAuthorization.current = { allowed: operationalAllowed, token, sessionRequest: request }
@@ -108,10 +115,12 @@ export function AppDataProvider({ children }) {
         setCadastrosStatus(result.status === 'operational-error'
           ? { status: 'error', error: result.error.message }
           : { status: 'success', error: '' })
+        return result
       } catch (error) {
-        if (!isCurrent()) return
+        if (!isCurrent()) throw error
         operationalAuthorization.current = { allowed: false, token, sessionRequest: request }
         setCadastrosStatus({ status: 'error', error: error.message })
+        throw error
       }
     }
 
@@ -173,7 +182,7 @@ export function AppDataProvider({ children }) {
   useEffect(() => {
     if (!apiEnabled()) return
     if (!getToken()) return
-    actions.reloadSession()
+    actions.reloadSession().catch(() => {})
   }, [actions])
 
   return <AppDataContext.Provider value={{ data, actions, remote }}>{children}</AppDataContext.Provider>

@@ -34,6 +34,13 @@ export function canLoadOperationalData(user) {
   return profile === 'PORTARIA' || profile === 'MORADOR'
 }
 
+export function isConfirmedSession(user) {
+  const profile = normalizeProfile(user?.profile || user?.perfil)
+  if (['MASTER', 'PORTARIA', 'MORADOR'].includes(profile)) return true
+  if (profile !== 'ADMIN') return false
+  return ['PENDENTE', 'CONCLUIDA'].includes(normalizeSetupState(user?.setupState || user?.configuracaoInicial))
+}
+
 export async function loadSessionBeforeOperational({
   loadCurrentUser,
   loadOperationalData,
@@ -41,6 +48,7 @@ export async function loadSessionBeforeOperational({
 } = {}) {
   const session = await loadCurrentUser()
   if (!isCurrent()) return { status: 'stale' }
+  if (!isConfirmedSession(session)) throw new ApiError(403, 'Não foi possível confirmar o perfil ou o estado da configuração.')
   if (!canLoadOperationalData(session)) return { status: 'session-only', session }
 
   let operational

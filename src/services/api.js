@@ -1,3 +1,5 @@
+import { notifySessionChanged } from './sessionEvents.js'
+
 // Cliente HTTP da API Condo+. Sem VITE_API_URL, o app continua usando apenas os mocks locais.
 const env = import.meta.env || {}
 const TOKEN_KEY = 'condoplus.token'
@@ -16,7 +18,11 @@ export function getToken() {
 }
 
 export function setToken(token) {
-  try { if (token) sessionStorage.setItem(TOKEN_KEY, token); else sessionStorage.removeItem(TOKEN_KEY) } catch { /* sem sessionStorage */ }
+  try {
+    const previous = sessionStorage.getItem(TOKEN_KEY) || ''
+    if (token) sessionStorage.setItem(TOKEN_KEY, token); else sessionStorage.removeItem(TOKEN_KEY)
+    if (previous !== (token || '')) notifySessionChanged()
+  } catch { /* sem sessionStorage */ }
 }
 
 // Lê as claims do JWT sem validar a assinatura: serve só para escopo de requisição; quem valida é o servidor.
