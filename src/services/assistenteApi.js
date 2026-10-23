@@ -14,7 +14,7 @@ export async function perguntarAoAssistente(historico, options) {
     const { resposta } = await apiPost('/assistente/mensagens', { mensagens: toMensagens(historico) }, options)
     return resposta
   } catch (error) {
-    // 503: assistente desligado no servidor (sem chave da Claude API), ocupado ou fora do ar
+    // 503: assistente desligado no servidor (sem ASSISTENTE_API_URL no backend), ocupado ou fora do ar
     if (error instanceof ApiError && error.status === 503) throw new ApiError(503, 'O assistente está indisponível no momento. Tente novamente mais tarde.')
     throw error
   }

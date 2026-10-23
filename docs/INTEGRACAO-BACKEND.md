@@ -222,6 +222,21 @@ No modo mock, a verificação local de CPF/senha serve apenas para permitir aces
 
 Ainda pendente: proteger as rotas do front conforme a sessão, redirecionar ao login quando o token expirar, e integrar a recuperação de senha. A autorização por perfil também precisa existir no servidor.
 
+### Setup inicial do Administrador
+
+A rota `/admin/configuracao-inicial` possui uma proteção específica no front. Ela usa perfil e condomínio presentes na sessão somente para decisões positivas já comprovadas: sessão ausente volta ao login, perfil não administrativo é recusado e Administrador com `condominio_id` volta ao Dashboard. A ausência dessa claim **não** autoriza criar condomínio.
+
+Para liberar o Wizard, um futuro adaptador deverá consultar um contrato autenticado do backend e normalizar sua resposta para a camada `features/setupWizard/setupAccess.js`. Esse contrato ainda não existe e precisa distinguir explicitamente:
+
+- Administrador autorizado sem condomínio vinculado;
+- Administrador com condomínio configurado;
+- verificação indisponível ou inconclusiva;
+- perfil sem autorização para o Setup.
+
+Enquanto não houver confirmação confiável, a rota exibe um estado de erro com nova tentativa e mantém o restante da Administração inalterado. A confirmação precisa vir do servidor; não deve ser deduzida de nome vazio, falha em `/usuarios/me`, erro de conexão ou ausência de `condominio_id`. O backend também deverá autorizar todas as futuras operações de criação, pois a proteção React não substitui controle de acesso no servidor.
+
+O rascunho das seis etapas permanece apenas em memória. Recarregar ou fechar a página descarta seu conteúdo; retomada persistente depende de contrato e persistência do backend.
+
 Com a API, o primeiro acesso cria a senha de verdade. No modo mock, ele e a recuperação de senha são demonstrativos. A recuperação continua demonstrativa nos dois modos: não altera senhas nem envia mensagens.
 
 ## Execução e hospedagem

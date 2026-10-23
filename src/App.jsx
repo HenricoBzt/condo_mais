@@ -5,6 +5,8 @@ import ResidentDashboard from './pages/morador/ResidentDashboard'
 import DesktopDashboard from './pages/desktop/DesktopDashboard'
 import EntityPage from './pages/desktop/EntityPage'
 import AdminSettingsPage from './pages/desktop/AdminSettingsPage'
+import VerticalSetupWizardPage from './pages/desktop/VerticalSetupWizardExperience'
+import AdminSetupAccessGate from './components/AdminSetupAccessGate'
 import { CommunicationDetail, CommunicationsPage, MorePage, ProfilePage, ResidentListPage } from './pages/morador/ResidentPages'
 
 export default function App() {
@@ -41,6 +43,7 @@ export default function App() {
       <Route path="/admin/comunicados" element={<EntityPage role="admin" type="comunicados" />} />
       <Route path="/admin/chamados" element={<EntityPage role="admin" type="chamadosAdmin" />} />
       <Route path="/admin/configuracoes" element={<AdminSettingsPage />} />
+      <Route path="/admin/configuracao-inicial" element={<AdminSetupAccessGate><VerticalSetupWizardPage /></AdminSetupAccessGate>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
