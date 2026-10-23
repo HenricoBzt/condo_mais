@@ -36,7 +36,7 @@ export default function LoginPage() {
     try {
       const { path } = await login(cpf, password)
       setError('')
-      actions.reloadAll()
+      await actions.reloadSession()
       navigate(path)
     } catch (loginError) {
       setInvalidFields(loginError.status === 401 ? ['cpf', 'password'] : [])

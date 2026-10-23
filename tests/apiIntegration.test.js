@@ -147,16 +147,19 @@ test('resposta 200 sem corpo (ex.: DELETE) não quebra', async () => {
   assert.equal(await excluirUnidade('ap-1', { fetchImpl }), null)
 })
 
-test('usuário logado vem de /usuarios/me com unidade e nome do condomínio', async () => {
+test('usuário logado vem de /usuarios/me com unidade, condomínio e estado de configuração', async () => {
   setToken(fakeJwt({ condominio_id: 'c-1' }))
-  const { fetchImpl, calls } = fakeFetch([['/usuarios/me', 200, { ...usuarioMorador, vinculo: 'INQUILINO', condominioNome: 'Residencial Real' }]])
-  const { currentResident, condominiumName } = await carregarUsuarioLogado({ fetchImpl })
+  const { fetchImpl, calls } = fakeFetch([['/usuarios/me', 200, { ...usuarioMorador, vinculo: 'INQUILINO', condominioNome: 'Residencial Real', configuracaoInicial: 'CONCLUIDA', modeloCondominio: 'VERTICAL' }]])
+  const { currentResident, condominiumName, profile, setupState, condominiumModel } = await carregarUsuarioLogado({ fetchImpl })
   assert.match(calls[0].url, /\/usuarios\/me$/)
   assert.equal(currentResident.name, 'Maria')
   assert.equal(currentResident.unit, '203')
   assert.equal(currentResident.tower, 'Torre A')
   assert.equal(currentResident.isOwner, false)
   assert.equal(condominiumName, 'Residencial Real')
+  assert.equal(profile, 'MORADOR')
+  assert.equal(setupState, 'CONCLUIDA')
+  assert.equal(condominiumModel, 'VERTICAL')
 })
 
 test('com a API ligada, o estado inicial não traz dados de demonstração', async () => {

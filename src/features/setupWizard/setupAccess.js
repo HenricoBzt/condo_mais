@@ -1,13 +1,5 @@
-import { apiEnabled, getToken, tokenClaims } from '../../services/api.js'
-import { profilePath } from '../../services/authApi.js'
-
-// Resultado interno esperado de um futuro adaptador de sessão. Estes valores não são
-// campos, claims ou respostas de API. O adaptador do backend deverá normalizar o
-// contrato definitivo para um destes estados antes de chamar esta camada.
-export const SETUP_CONFIRMATION = Object.freeze({
-  AUTHORIZED_WITHOUT_CONDOMINIUM: 'AUTHORIZED_WITHOUT_CONDOMINIUM',
-  CONDOMINIUM_CONFIGURED: 'CONDOMINIUM_CONFIGURED',
-})
+import { getToken } from '../../services/api.js'
+import { SESSION_ACCESS, SESSION_AREA, decideSessionAccess, normalizeProfile, resolveSessionAccess } from '../session/sessionAccess.js'
 
 export const SETUP_ACCESS = Object.freeze({
   ALLOWED: 'allowed',
@@ -18,47 +10,24 @@ export const SETUP_ACCESS = Object.freeze({
   ERROR: 'error',
 })
 
-const adminProfiles = new Set(['ADMIN', 'ADMINISTRADOR', 'ADMINISTRACAO'])
+export { normalizeProfile }
 
-export function normalizeProfile(profile = '') {
-  return String(profile).normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase()
+function toSetupDecision(decision) {
+  if (decision.status === SESSION_ACCESS.ALLOWED) return { status: SETUP_ACCESS.ALLOWED, destination: '' }
+  if (decision.status === SESSION_ACCESS.NO_SESSION) return { status: SETUP_ACCESS.NO_SESSION, destination: '/' }
+  if (decision.status === SESSION_ACCESS.UNKNOWN) return { status: SETUP_ACCESS.UNKNOWN, destination: '' }
+  if (decision.status === SESSION_ACCESS.ERROR) return { status: SETUP_ACCESS.ERROR, destination: '', message: decision.message }
+  if (decision.status === SESSION_ACCESS.REDIRECT && decision.destination === '/admin') return { status: SETUP_ACCESS.CONFIGURED, destination: '/admin' }
+  return { status: SETUP_ACCESS.DENIED, destination: decision.destination || '/' }
 }
 
-export function decideSetupAccess({ token, confirmation } = {}) {
-  const claims = tokenClaims(token)
-  if (!token || !claims) return { status: SETUP_ACCESS.NO_SESSION, destination: '/' }
-
-  const profile = normalizeProfile(claims.perfil)
-  if (!adminProfiles.has(profile)) {
-    return { status: SETUP_ACCESS.DENIED, destination: profilePath(profile) || '/' }
-  }
-
-  // Uma identificação presente confirma que esta conta já está vinculada. A ausência
-  // nunca confirma o oposto: ela exige autorização explícita do futuro contrato.
-  if (claims.condominio_id || confirmation === SETUP_CONFIRMATION.CONDOMINIUM_CONFIGURED) {
-    return { status: SETUP_ACCESS.CONFIGURED, destination: '/admin' }
-  }
-  if (confirmation === SETUP_CONFIRMATION.AUTHORIZED_WITHOUT_CONDOMINIUM) {
-    return { status: SETUP_ACCESS.ALLOWED, destination: '' }
-  }
-  return { status: SETUP_ACCESS.UNKNOWN, destination: '' }
+export function decideSetupAccess({ token, user } = {}) {
+  return toSetupDecision(decideSessionAccess({ token, user, area: SESSION_AREA.ADMIN_SETUP }))
 }
 
 export async function resolveCurrentSetupAccess({
-  token = apiEnabled() ? getToken() : '',
-  loadConfirmation,
+  token = getToken(),
+  loadCurrentUser,
 } = {}) {
-  const initial = decideSetupAccess({ token })
-  if (initial.status !== SETUP_ACCESS.UNKNOWN || !loadConfirmation) return initial
-
-  try {
-    const confirmation = await loadConfirmation()
-    return decideSetupAccess({ token, confirmation })
-  } catch (error) {
-    return {
-      status: SETUP_ACCESS.ERROR,
-      destination: '',
-      message: error?.message || 'Não foi possível verificar a autorização para a configuração inicial.',
-    }
-  }
+  return toSetupDecision(await resolveSessionAccess({ area: SESSION_AREA.ADMIN_SETUP, token, loadCurrentUser }))
 }

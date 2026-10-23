@@ -45,7 +45,7 @@ function AuthFlowStep({ step }) {
       setSubmitting(true)
       try {
         const { path } = await primeiroAcesso(activationCpf, values['Nova senha'])
-        actions.reloadAll()
+        await actions.reloadSession()
         navigate(path)
       } catch (activationError) {
         setInvalidField('')

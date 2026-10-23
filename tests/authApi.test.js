@@ -29,10 +29,18 @@ test('máscara de CPF é progressiva e ignora o que não é dígito', () => {
 })
 
 test('perfil do backend (texto livre) abre a área correspondente', () => {
-  for (const [perfil, path] of [['ADMIN', '/admin'], ['Administrador', '/admin'], ['Administração', '/admin'], ['Portaria', '/portaria'], ['PORTEIRO', '/portaria'], [' morador ', '/morador']]) {
+  for (const [perfil, path] of [['MASTER', '/plataforma'], ['ADMIN', '/admin'], ['Administrador', '/admin'], ['Administração', '/admin'], ['Portaria', '/portaria'], ['PORTEIRO', '/portaria'], [' morador ', '/morador']]) {
     assert.equal(profilePath(perfil), path, perfil)
   }
   for (const perfil of ['', 'SINDICO', undefined]) assert.equal(profilePath(perfil), '')
+})
+
+test('login do MASTER guarda a sessão e direciona para a plataforma', async () => {
+  logout()
+  const token = fakeJwt({ sub: '529.982.247-25', perfil: 'MASTER' })
+  const { fetchImpl } = respond(200, { token })
+  assert.deepEqual(await login('52998224725', 'segredo', { fetchImpl }), { path: '/plataforma' })
+  assert.equal(getToken(), token)
 })
 
 test('login envia CPF formatado, guarda o token e devolve a rota do perfil', async () => {
