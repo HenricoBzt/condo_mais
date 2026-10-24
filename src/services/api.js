@@ -84,6 +84,6 @@ export function apiGet(path, params = {}, { fetchImpl } = {}) { return request('
 
 export function apiPost(path, body, { fetchImpl, expectedStatus } = {}) { return request('POST', path, { body, fetchImpl, expectedStatus }) }
 
-export function apiPut(path, body, { fetchImpl } = {}) { return request('PUT', path, { body, fetchImpl }) }
+export function apiPut(path, body, { fetchImpl, expectedStatus } = {}) { return request('PUT', path, { body, fetchImpl, expectedStatus }) }
 
 export function apiDelete(path, { fetchImpl } = {}) { return request('DELETE', path, { fetchImpl }) }

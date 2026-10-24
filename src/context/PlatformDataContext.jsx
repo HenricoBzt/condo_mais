@@ -1,7 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { normalizePlatformCondominium, normalizePlatformCondominiums } from '../features/platform/platformData.js'
 import { ApiError, apiEnabled, getToken } from '../services/api.js'
-import { buscarCondominioPlataforma, criarCondominioPlataforma, listarCondominiosPlataforma } from '../services/platformApi.js'
+import {
+  ativarCondominioPlataforma,
+  atualizarCondominioPlataforma,
+  buscarCondominioPlataforma,
+  criarCondominioPlataforma,
+  desativarCondominioPlataforma,
+  listarCondominiosPlataforma,
+} from '../services/platformApi.js'
 import { subscribeToSessionChanges } from '../services/sessionEvents.js'
 
 const PlatformDataContext = createContext(null)
@@ -12,6 +19,9 @@ export function PlatformDataProvider({
   listLoader = listarCondominiosPlataforma,
   detailLoader = buscarCondominioPlataforma,
   createLoader = criarCondominioPlataforma,
+  updateLoader = atualizarCondominioPlataforma,
+  activateLoader = ativarCondominioPlataforma,
+  deactivateLoader = desativarCondominioPlataforma,
   apiActive = apiEnabled(),
 }) {
   const [list, setList] = useState(initialList)
@@ -22,6 +32,9 @@ export function PlatformDataProvider({
   const detailRequests = useRef({})
   const createRequest = useRef(0)
   const createPending = useRef(false)
+  const mutationSequence = useRef(0)
+  const mutationRequests = useRef({})
+  const mutationPending = useRef(new Set())
   const providerMounted = useRef(true)
   const listRef = useRef(list)
   const detailsRef = useRef(details)
@@ -37,6 +50,8 @@ export function PlatformDataProvider({
       detailRequests.current = {}
       createRequest.current += 1
       createPending.current = false
+      mutationRequests.current = {}
+      mutationPending.current.clear()
     }
   }, [])
 
@@ -46,6 +61,8 @@ export function PlatformDataProvider({
     detailRequests.current = {}
     createRequest.current += 1
     createPending.current = false
+    mutationRequests.current = {}
+    mutationPending.current.clear()
     setList(initialList)
     setDetails({})
     setSessionRevision((current) => current + 1)
@@ -73,6 +90,22 @@ export function PlatformDataProvider({
   }, [apiActive, listLoader])
 
   useEffect(() => { loadList() }, [loadList, sessionRevision])
+
+  const storeCondominium = useCallback((response) => {
+    const item = normalizePlatformCondominium(response)
+    setDetails((current) => ({ ...current, [item.id]: { status: 'success', error: '', item } }))
+    if (listRef.current.status === 'success') {
+      setList((current) => ({
+        status: 'success',
+        error: '',
+        items: [...current.items.filter((entry) => entry.id !== item.id), item]
+          .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+      }))
+    } else {
+      void loadList()
+    }
+    return item
+  }, [loadList])
 
   const loadDetail = useCallback(async (id, { force = false } = {}) => {
     const key = String(id || '').trim()
@@ -109,20 +142,7 @@ export function PlatformDataProvider({
       if (!providerMounted.current || request !== createRequest.current || currentGeneration !== generation.current || token !== getToken()) {
         throw new ApiError(409, 'A sessão mudou durante o cadastro. Consulte a listagem antes de tentar novamente.')
       }
-      const item = normalizePlatformCondominium(response)
-      const listWasReady = listRef.current.status === 'success'
-      setDetails((current) => ({ ...current, [item.id]: { status: 'success', error: '', item } }))
-      if (listWasReady) {
-        setList((current) => ({
-          status: 'success',
-          error: '',
-          items: [...current.items.filter((entry) => entry.id !== item.id), item]
-            .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
-        }))
-      } else {
-        void loadList()
-      }
-      return item
+      return storeCondominium(response)
     } catch (error) {
       if (!providerMounted.current || request !== createRequest.current || currentGeneration !== generation.current || token !== getToken()) {
         throw new ApiError(409, 'A sessão mudou durante o cadastro. Consulte a listagem antes de tentar novamente.')
@@ -131,7 +151,41 @@ export function PlatformDataProvider({
     } finally {
       if (request === createRequest.current) createPending.current = false
     }
-  }, [apiActive, createLoader, loadList])
+  }, [apiActive, createLoader, storeCondominium])
+
+  const mutateCondominium = useCallback(async (id, loader, payload) => {
+    const key = String(id || '').trim()
+    if (!key) throw new ApiError(400, 'Condomínio não informado.')
+    if (mutationPending.current.has(key)) throw new ApiError(409, 'Já existe uma alteração em andamento para este condomínio.')
+    if (!apiActive) throw new ApiError(0, 'Não foi possível conectar o painel MASTER à API.')
+
+    const token = getToken()
+    const currentGeneration = generation.current
+    const request = ++mutationSequence.current
+    mutationRequests.current[key] = request
+    mutationPending.current.add(key)
+    try {
+      const response = payload === undefined ? await loader(key) : await loader(key, payload)
+      if (!providerMounted.current || mutationRequests.current[key] !== request || currentGeneration !== generation.current || token !== getToken()) {
+        throw new ApiError(409, 'A sessão mudou durante a alteração. Consulte novamente os detalhes antes de tentar outra vez.')
+      }
+      return storeCondominium(response)
+    } catch (error) {
+      if (!providerMounted.current || mutationRequests.current[key] !== request || currentGeneration !== generation.current || token !== getToken()) {
+        throw new ApiError(409, 'A sessão mudou durante a alteração. Consulte novamente os detalhes antes de tentar outra vez.')
+      }
+      throw error
+    } finally {
+      if (mutationRequests.current[key] === request) {
+        delete mutationRequests.current[key]
+        mutationPending.current.delete(key)
+      }
+    }
+  }, [apiActive, storeCondominium])
+
+  const updateCondominium = useCallback((id, payload) => mutateCondominium(id, updateLoader, payload), [mutateCondominium, updateLoader])
+  const activateCondominium = useCallback((id) => mutateCondominium(id, activateLoader), [activateLoader, mutateCondominium])
+  const deactivateCondominium = useCallback((id) => mutateCondominium(id, deactivateLoader), [deactivateLoader, mutateCondominium])
 
   const value = useMemo(() => ({
     condominiums: list.items,
@@ -141,7 +195,11 @@ export function PlatformDataProvider({
     detailState: (id) => details[id] || { status: 'idle', error: '', item: null },
     loadDetail,
     createCondominium,
-  }), [createCondominium, details, list, loadDetail, loadList])
+    updateCondominium,
+    activateCondominium,
+    deactivateCondominium,
+    sessionRevision,
+  }), [activateCondominium, createCondominium, deactivateCondominium, details, list, loadDetail, loadList, sessionRevision, updateCondominium])
 
   return <PlatformDataContext.Provider value={value}>{children}</PlatformDataContext.Provider>
 }
