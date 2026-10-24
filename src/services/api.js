@@ -64,7 +64,12 @@ async function request(method, path, { params = {}, body, fetchImpl = fetch } = 
   } catch {
     throw new ApiError(0, 'Não foi possível conectar ao servidor. Verifique sua conexão.')
   }
-  if (!response.ok) throw await responseError(response)
+  if (!response.ok) {
+    const error = await responseError(response)
+    // Uma resposta atrasada só pode encerrar a sessão que originou a requisição.
+    if (response.status === 401 && token && token === getToken()) setToken('')
+    throw error
+  }
   if (response.status === 204) return null
   // DELETE e alguns PUT respondem 200 sem corpo; /auth/primeiro-acesso responde texto puro
   const text = await response.text()
