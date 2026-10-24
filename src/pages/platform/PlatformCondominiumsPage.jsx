@@ -1,4 +1,4 @@
-import { Search } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import PlatformState from '../../components/PlatformState.jsx'
@@ -16,7 +16,7 @@ export default function PlatformCondominiumsPage() {
   const clear = () => setFilters({ query: '', operationalStatus: '', setupStatus: '' })
 
   return <section className="platform-content-page">
-    <div className="platform-page-heading"><div><span>Gestão da plataforma</span><h1>Condomínios</h1><p>Consulte os cadastros e acompanhe seus dois estados independentes.</p></div></div>
+    <div className="platform-page-heading"><div><span>Gestão da plataforma</span><h1>Condomínios</h1><p>Consulte os cadastros e acompanhe seus dois estados independentes.</p></div><Link className="desktop-primary" to="/plataforma/condominios/novo"><Plus size={18} /> Cadastrar condomínio</Link></div>
     {listStatus === 'loading' || listStatus === 'idle' ? <PlatformState kind="loading" title="Carregando condomínios" />
       : listStatus === 'error' ? <PlatformState kind="error" title="Não foi possível carregar os condomínios" description={listError} onRetry={retryList} />
       : !condominiums.length ? <PlatformState kind="empty" title="Nenhum condomínio cadastrado" description="A API não retornou condomínios para esta plataforma." />

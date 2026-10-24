@@ -1,4 +1,4 @@
-import { Building, Building2, CircleCheckBig, CircleX, Clock3 } from 'lucide-react'
+import { Building, Building2, CircleCheckBig, CircleX, Clock3, Plus } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import PlatformState from '../../components/PlatformState.jsx'
 import StatCard from '../../components/StatCard.jsx'
@@ -12,7 +12,7 @@ export default function PlatformDashboardPage() {
 
   const indicators = platformIndicators(condominiums)
   return <section className="platform-content-page">
-    <div className="platform-page-heading"><div><span>Visão geral</span><h1>Dashboard da plataforma</h1><p>Acompanhe a situação dos condomínios cadastrados no Condo+.</p></div><Link className="desktop-primary" to="/plataforma/condominios"><Building2 size={18} /> Ver condomínios</Link></div>
+    <div className="platform-page-heading"><div><span>Visão geral</span><h1>Dashboard da plataforma</h1><p>Acompanhe a situação dos condomínios cadastrados no Condo+.</p></div><div className="platform-heading-actions"><Link className="secondary-button" to="/plataforma/condominios"><Building2 size={18} /> Ver condomínios</Link><Link className="desktop-primary" to="/plataforma/condominios/novo"><Plus size={18} /> Cadastrar condomínio</Link></div></div>
     <div className="platform-stat-grid">
       <StatCard icon={Building2} label="Total de condomínios" value={indicators.total} detail="cadastros encontrados" tone="violet" />
       <StatCard icon={Building} label="Condomínios ativos" value={indicators.active} detail="com acesso operacional" />
