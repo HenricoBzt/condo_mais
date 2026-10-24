@@ -1,8 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { assertPlatformCondominiumDto, assertPlatformCondominiumListDto, filterPlatformCondominiums, normalizePlatformCondominium, platformIndicators } from '../src/features/platform/platformData.js'
-import { listarCondominiosPlataforma, buscarCondominioPlataforma, criarCondominioPlataforma } from '../src/services/platformApi.js'
-import { setToken } from '../src/services/api.js'
+import {
+  ativarCondominioPlataforma,
+  atualizarCondominioPlataforma,
+  buscarCondominioPlataforma,
+  criarCondominioPlataforma,
+  desativarCondominioPlataforma,
+  listarCondominiosPlataforma,
+} from '../src/services/platformApi.js'
+import { getToken, setToken } from '../src/services/api.js'
 
 const storage = new Map()
 globalThis.sessionStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)), removeItem: (key) => storage.delete(key) }
@@ -138,4 +145,78 @@ test('cadastro preserva erros 400, 401, 403, 409, 500 e falha de rede', async ()
   }
   setToken('token-master')
   await assert.rejects(criarCondominioPlataforma(payload, { fetchImpl: async () => { throw new Error('offline') } }), (error) => error.status === 0)
+})
+
+test('edição usa PUT com payload exato e exige HTTP 200 com DTO válido', async () => {
+  setToken('token-master')
+  const payload = { nome: 'Aurora Atualizado', cnpj: '04.252.011/0001-10' }
+  const response = condominium({ nome: payload.nome, cnpj: payload.cnpj })
+  const calls = []
+  assert.deepEqual(await atualizarCondominioPlataforma(ids[0], payload, { fetchImpl: fakeFetch(200, response, calls) }), response)
+  assert.equal(calls[0].init.method, 'PUT')
+  assert.match(calls[0].url, new RegExp(`/plataforma/condominios/${ids[0]}$`))
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer token-master')
+  assert.deepEqual(JSON.parse(calls[0].init.body), payload)
+  await assert.rejects(atualizarCondominioPlataforma(ids[0], payload, { fetchImpl: fakeFetch(201, response) }), (error) => error.status === 502)
+  await assert.rejects(atualizarCondominioPlataforma(ids[0], payload, { fetchImpl: fakeFetch(200, {}) }), (error) => error.status === 502)
+})
+
+test('ativação e desativação usam PUT sem corpo e validam a resposta', async () => {
+  setToken('token-master')
+  const activateCalls = []
+  const active = condominium({ status: 'ATIVO' })
+  await ativarCondominioPlataforma(ids[0], { fetchImpl: fakeFetch(200, active, activateCalls) })
+  assert.match(activateCalls[0].url, new RegExp(`/plataforma/condominios/${ids[0]}/ativar$`))
+  assert.equal(activateCalls[0].init.method, 'PUT')
+  assert.equal('body' in activateCalls[0].init, false)
+
+  const deactivateCalls = []
+  const inactive = condominium({ status: 'INATIVO' })
+  await desativarCondominioPlataforma(ids[0], { fetchImpl: fakeFetch(200, inactive, deactivateCalls) })
+  assert.match(deactivateCalls[0].url, new RegExp(`/plataforma/condominios/${ids[0]}/desativar$`))
+  assert.equal('body' in deactivateCalls[0].init, false)
+  await assert.rejects(desativarCondominioPlataforma(ids[0], { fetchImpl: fakeFetch(200, {}) }), (error) => error.status === 502)
+})
+
+test('ativação e desativação rejeitam HTTP 200 quando o status solicitado não foi confirmado', async () => {
+  setToken('token-master')
+  const active = condominium({ status: 'ATIVO' })
+  const inactive = condominium({ status: 'INATIVO' })
+
+  assert.deepEqual(await ativarCondominioPlataforma(ids[0], { fetchImpl: fakeFetch(200, active) }), active)
+  await assert.rejects(
+    ativarCondominioPlataforma(ids[0], { fetchImpl: fakeFetch(200, inactive) }),
+    (error) => error.status === 502 && /não confirmou a ativação/i.test(error.message),
+  )
+
+  assert.deepEqual(await desativarCondominioPlataforma(ids[0], { fetchImpl: fakeFetch(200, inactive) }), inactive)
+  await assert.rejects(
+    desativarCondominioPlataforma(ids[0], { fetchImpl: fakeFetch(200, active) }),
+    (error) => error.status === 502 && /não confirmou a desativação/i.test(error.message),
+  )
+})
+
+test('401 atrasado de PUT antigo não invalida o token de uma sessão mais recente', async () => {
+  let resolveResponse
+  setToken('token-master-antigo')
+  const operation = atualizarCondominioPlataforma(ids[0], { nome: 'Aurora', cnpj: '04.252.011/0001-10' }, {
+    fetchImpl: () => new Promise((resolve) => { resolveResponse = resolve }),
+  })
+
+  setToken('token-master-novo')
+  resolveResponse({ ok: false, status: 401, json: async () => ({ mensagem: 'Sessão expirada.' }) })
+
+  await assert.rejects(operation, (error) => error.status === 401)
+  assert.equal(getToken(), 'token-master-novo')
+})
+
+test('PUTs preservam erros 400, 401, 403, 404, 409, 500 e falha de rede', async () => {
+  const payload = { nome: 'Aurora', cnpj: '04.252.011/0001-10' }
+  for (const status of [400, 401, 403, 404, 409, 500]) {
+    setToken('token-master')
+    await assert.rejects(atualizarCondominioPlataforma(ids[0], payload, { fetchImpl: fakeFetch(status, { mensagem: `erro-${status}` }) }), (error) => error.status === status)
+  }
+  setToken('token-master')
+  await assert.rejects(ativarCondominioPlataforma(ids[0], { fetchImpl: async () => { throw new Error('offline') } }), (error) => error.status === 0)
+  await assert.rejects(atualizarCondominioPlataforma('', payload, { fetchImpl: fakeFetch(200, condominium()) }), (error) => error.status === 400)
 })

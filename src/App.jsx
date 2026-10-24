@@ -15,6 +15,7 @@ import PlatformDashboardPage from './pages/platform/PlatformDashboardPage'
 import PlatformCondominiumsPage from './pages/platform/PlatformCondominiumsPage'
 import PlatformCondominiumDetailPage from './pages/platform/PlatformCondominiumDetailPage'
 import PlatformCondominiumCreatePage from './pages/platform/PlatformCondominiumCreatePage'
+import PlatformCondominiumEditPage from './pages/platform/PlatformCondominiumEditPage'
 import { CommunicationDetail, CommunicationsPage, MorePage, ProfilePage, ResidentListPage } from './pages/morador/ResidentPages'
 
 export default function App() {
@@ -63,6 +64,7 @@ export default function App() {
           <Route path="/plataforma" element={<PlatformDashboardPage />} />
           <Route path="/plataforma/condominios" element={<PlatformCondominiumsPage />} />
           <Route path="/plataforma/condominios/novo" element={<PlatformCondominiumCreatePage />} />
+          <Route path="/plataforma/condominios/:id/editar" element={<PlatformCondominiumEditPage />} />
           <Route path="/plataforma/condominios/:id" element={<PlatformCondominiumDetailPage />} />
         </Route>
       </Route>

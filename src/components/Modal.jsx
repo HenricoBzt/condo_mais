@@ -4,11 +4,11 @@ import { useEffect, useId, useRef } from 'react'
 const modalStack = []
 const focusable = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]'
 
-export default function Modal({ open, title, children, onClose, onConfirm, confirmLabel = 'Salvar', intent = 'primary' }) {
+export default function Modal({ open, title, children, onClose, onConfirm, confirmLabel = 'Salvar', intent = 'primary', busy = false }) {
   const titleId = useId()
   const dialogRef = useRef(null)
   const closeRef = useRef(onClose)
-  closeRef.current = onClose
+  closeRef.current = () => { if (!busy) onClose?.() }
   useEffect(() => {
     if (!open) return
     const dialog = dialogRef.current
@@ -39,11 +39,11 @@ export default function Modal({ open, title, children, onClose, onConfirm, confi
   }, [open])
   if (!open) return null
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section ref={dialogRef} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(event) => event.stopPropagation()}>
-        <header><h2 id={titleId}>{title}</h2><button aria-label="Fechar" onClick={onClose}><X size={20} /></button></header>
+    <div className="modal-backdrop" role="presentation" onMouseDown={() => closeRef.current()}>
+      <section ref={dialogRef} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy || undefined} onMouseDown={(event) => event.stopPropagation()}>
+        <header><h2 id={titleId}>{title}</h2><button aria-label="Fechar" disabled={busy} onClick={() => closeRef.current()}><X size={20} /></button></header>
         <div className="modal__body">{children}</div>
-        <footer>{onConfirm ? <><button className="secondary-button" onClick={onClose}>Cancelar</button><button className={intent === 'danger' ? 'danger-button' : 'primary-button'} onClick={onConfirm}>{confirmLabel}</button></> : <button className="secondary-button" onClick={onClose}>Fechar</button>}</footer>
+        <footer>{onConfirm ? <><button className="secondary-button" disabled={busy} onClick={() => closeRef.current()}>Cancelar</button><button className={intent === 'danger' ? 'danger-button' : 'primary-button'} disabled={busy} onClick={() => { if (!busy) onConfirm() }}>{confirmLabel}</button></> : <button className="secondary-button" disabled={busy} onClick={() => closeRef.current()}>Fechar</button>}</footer>
       </section>
     </div>
   )

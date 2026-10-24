@@ -20,8 +20,10 @@ const { default: PlatformDashboardPage } = await server.ssrLoadModule('/src/page
 const { default: PlatformCondominiumsPage } = await server.ssrLoadModule('/src/pages/platform/PlatformCondominiumsPage.jsx')
 const { default: PlatformCondominiumDetailPage } = await server.ssrLoadModule('/src/pages/platform/PlatformCondominiumDetailPage.jsx')
 const { default: PlatformCondominiumCreatePage } = await server.ssrLoadModule('/src/pages/platform/PlatformCondominiumCreatePage.jsx')
+const { default: PlatformCondominiumEditPage } = await server.ssrLoadModule('/src/pages/platform/PlatformCondominiumEditPage.jsx')
 const { default: PlatformLayout } = await server.ssrLoadModule('/src/layouts/PlatformLayout.jsx')
 const { setToken } = await server.ssrLoadModule('/src/services/api.js')
+const { ativarCondominioPlataforma, desativarCondominioPlataforma } = await server.ssrLoadModule('/src/services/platformApi.js')
 const { platformIndicators } = await server.ssrLoadModule('/src/features/platform/platformData.js')
 
 const firstId = '11111111-1111-4111-8111-111111111111'
@@ -30,6 +32,10 @@ const createdId = '33333333-3333-4333-8333-333333333333'
 const records = [
   { id: firstId, nome: 'Residencial Aurora', cnpj: '11.111.111/0001-11', status: 'ATIVO', configuracaoInicial: 'PENDENTE', modelo: null, criadoEm: '2026-10-20T10:00:00', administradores: [] },
   { id: secondId, nome: 'Bosque Verde', cnpj: '22.222.222/0001-22', status: 'INATIVO', configuracaoInicial: 'CONCLUIDA', modelo: 'VERTICAL', criadoEm: '2026-10-21T10:00:00', administradores: [] },
+]
+const managementRecords = [
+  { ...records[0], cnpj: '04.252.011/0001-10' },
+  { ...records[1], cnpj: '11.222.333/0001-81' },
 ]
 
 test.beforeEach(() => setToken('sessao-master'))
@@ -269,4 +275,299 @@ test('desmontagem completa do Provider invalida o POST antes de qualquer atualiz
   await operation
   assert.equal(capturedError?.status, 409)
   assert.match(capturedError?.message || '', /sessão mudou durante o cadastro/i)
+})
+
+function ManagementProbe() {
+  const state = usePlatformData()
+  const indicators = platformIndicators(state.condominiums)
+  const first = state.condominiums.find((item) => item.id === firstId)
+  return React.createElement('output', { 'data-testid': 'platform-management-probe' }, `${indicators.active}:${indicators.inactive}:${first?.nome || ''}:${first?.status || ''}:${state.detailState(firstId).status}`)
+}
+
+function renderManagement({
+  path = `/plataforma/condominios/${firstId}/editar`,
+  listLoader = async () => managementRecords,
+  detailLoader = async () => managementRecords[0],
+  updateLoader = async () => managementRecords[0],
+  activateLoader = async () => ({ ...managementRecords[0], status: 'ATIVO' }),
+  deactivateLoader = async () => ({ ...managementRecords[0], status: 'INATIVO' }),
+} = {}) {
+  return render(React.createElement(MemoryRouter, { initialEntries: [path] },
+    React.createElement(Routes, null,
+      React.createElement(Route, { element: React.createElement(PlatformDataProvider, { listLoader, detailLoader, updateLoader, activateLoader, deactivateLoader, apiActive: true }, React.createElement(Outlet)) },
+        React.createElement(Route, { path: '/plataforma/condominios/:id/editar', element: React.createElement(React.Fragment, null, React.createElement(PlatformCondominiumEditPage), React.createElement(ManagementProbe)) }),
+        React.createElement(Route, { path: '/plataforma/condominios/:id', element: React.createElement(React.Fragment, null, React.createElement(PlatformCondominiumDetailPage), React.createElement(ManagementProbe)) }),
+      ),
+    )))
+}
+
+test('edição pré-preenche dados reais, valida campos e trata duplicidade local como aviso', async () => {
+  let calls = 0
+  let payload
+  const updated = { ...managementRecords[0], nome: 'Aurora Atualizado', cnpj: managementRecords[1].cnpj }
+  const view = renderManagement({ updateLoader: async (id, body) => { calls += 1; assert.equal(id, firstId); payload = body; return updated } })
+  const name = await view.findByLabelText('Nome do condomínio')
+  const cnpj = view.getByLabelText('CNPJ')
+  assert.equal(name.value, 'Residencial Aurora')
+  assert.equal(cnpj.value, '04.252.011/0001-10')
+  assert.equal(view.queryByText(/Já existe outro condomínio/), null)
+
+  fireEvent.change(name, { target: { value: '' } })
+  fireEvent.click(view.getByRole('button', { name: 'Salvar alterações' }))
+  assert.equal(document.activeElement, name)
+  assert.equal(calls, 0)
+
+  fireEvent.change(name, { target: { value: '  Aurora Atualizado  ' } })
+  fireEvent.change(cnpj, { target: { value: '11222333000181' } })
+  const warning = view.getByText(/Você ainda pode enviar a alteração/)
+  assert.equal(cnpj.getAttribute('aria-invalid'), null)
+  assert.equal(cnpj.getAttribute('aria-describedby'), warning.id)
+  fireEvent.click(view.getByRole('button', { name: 'Salvar alterações' }))
+  assert.ok(await view.findByText('Dados do condomínio atualizados com sucesso.'))
+  assert.deepEqual(payload, { nome: 'Aurora Atualizado', cnpj: '11.222.333/0001-81' })
+  assert.equal(calls, 1)
+  assert.equal(document.activeElement, view.container.querySelector('.platform-success-banner'))
+  assert.match(view.getByTestId('platform-management-probe').textContent, /^1:1:Aurora Atualizado:ATIVO:success$/)
+})
+
+test('edição preserva campos, associa HTTP 409 ao CNPJ e orienta após falha de rede', async () => {
+  let attempt = 0
+  const view = renderManagement({ updateLoader: async () => {
+    attempt += 1
+    if (attempt === 1) throw Object.assign(new Error('Já existe um condomínio cadastrado com este CNPJ.'), { status: 409 })
+    throw Object.assign(new Error('offline'), { status: 0 })
+  } })
+  const name = await view.findByLabelText('Nome do condomínio')
+  fireEvent.change(name, { target: { value: 'Nome preservado' } })
+  fireEvent.click(view.getByRole('button', { name: 'Salvar alterações' }))
+  assert.ok(await view.findByText('Já existe um condomínio cadastrado com este CNPJ.'))
+  assert.equal(view.getByLabelText('CNPJ').getAttribute('aria-invalid'), 'true')
+  assert.equal(name.value, 'Nome preservado')
+  fireEvent.change(view.getByLabelText('CNPJ'), { target: { value: '04252011000110' } })
+  fireEvent.click(view.getByRole('button', { name: 'Salvar alterações' }))
+  assert.ok(await view.findByText(/Não foi possível confirmar se a alteração foi concluída/))
+  assert.equal(name.value, 'Nome preservado')
+  assert.equal(attempt, 2)
+})
+
+test('edição trata loading, erro e retry antes de pré-preencher o formulário', async () => {
+  let attempts = 0
+  const view = renderManagement({ detailLoader: async () => {
+    attempts += 1
+    if (attempts === 1) throw new Error('Falha temporária no detalhe.')
+    return managementRecords[0]
+  } })
+  assert.ok(view.getByText('Carregando dados do condomínio'))
+  assert.ok(await view.findByText('Falha temporária no detalhe.'))
+  fireEvent.click(view.getByRole('button', { name: 'Tentar novamente' }))
+  assert.equal((await view.findByLabelText('Nome do condomínio')).value, 'Residencial Aurora')
+  assert.equal(attempts, 2)
+})
+
+test('edição bloqueia Enter, clique duplicado e cancelamento durante o PUT', async () => {
+  let calls = 0
+  let release
+  const updated = { ...managementRecords[0], nome: 'Nome em processamento' }
+  const view = renderManagement({ updateLoader: () => { calls += 1; return new Promise((resolve) => { release = () => resolve(updated) }) } })
+  const name = await view.findByLabelText('Nome do condomínio')
+  fireEvent.change(name, { target: { value: 'Nome em processamento' } })
+  const submit = view.getByRole('button', { name: 'Salvar alterações' })
+  fireEvent.click(submit)
+  fireEvent.submit(submit.closest('form'))
+  assert.equal(calls, 1)
+  assert.equal(view.getByRole('button', { name: 'Salvando...' }).disabled, true)
+  assert.equal(view.getByRole('button', { name: 'Cancelar' }).disabled, true)
+  await act(async () => release())
+  assert.ok(await view.findByText('Dados do condomínio atualizados com sucesso.'))
+})
+
+test('cancelamento da desativação fecha o diálogo e restaura o foco', async () => {
+  const view = renderManagement({ path: `/plataforma/condominios/${firstId}` })
+  const trigger = await view.findByRole('button', { name: 'Desativar condomínio' })
+  trigger.focus()
+  fireEvent.click(trigger)
+  assert.ok(view.getByText(/O primeiro acesso ainda permite definir senha/))
+  fireEvent.click(view.getByRole('button', { name: 'Cancelar' }))
+  await waitFor(() => assert.equal(view.queryByRole('dialog'), null))
+  assert.equal(document.activeElement, trigger)
+})
+
+test('desativação bloqueia fechamento e duplo envio e atualiza indicadores', async () => {
+  let calls = 0
+  let release
+  const inactive = { ...managementRecords[0], status: 'INATIVO' }
+  const view = renderManagement({
+    path: `/plataforma/condominios/${firstId}`,
+    deactivateLoader: async () => { calls += 1; return new Promise((resolve) => { release = () => resolve(inactive) }) },
+  })
+  const trigger = await view.findByRole('button', { name: 'Desativar condomínio' })
+  fireEvent.click(trigger)
+  assert.ok(view.getByText(/O primeiro acesso ainda permite definir senha/))
+  const confirm = view.getAllByRole('button', { name: 'Desativar condomínio' }).at(-1)
+  fireEvent.click(confirm)
+  fireEvent.click(confirm)
+  assert.equal(calls, 1)
+  assert.equal(view.getByRole('button', { name: 'Aguarde...' }).disabled, true)
+  assert.equal(view.getByRole('button', { name: 'Cancelar' }).disabled, true)
+  fireEvent.keyDown(document, { key: 'Escape' })
+  fireEvent.mouseDown(view.container.querySelector('.modal-backdrop'))
+  assert.ok(view.getByRole('dialog'))
+  await act(async () => release())
+  assert.ok(await view.findByText('Condomínio desativado. O acesso autenticado está bloqueado.'))
+  assert.equal(document.activeElement, view.container.querySelector('.platform-success-banner'))
+  assert.ok(view.getByRole('button', { name: 'Reativar condomínio' }))
+  assert.match(view.getByTestId('platform-management-probe').textContent, /^0:2:Residencial Aurora:INATIVO:success$/)
+})
+
+test('reativação atualiza detalhe e informa a restrição a usuários individualmente ativos', async () => {
+  const inactiveList = [{ ...managementRecords[0], status: 'INATIVO' }, managementRecords[1]]
+  const active = { ...inactiveList[0], status: 'ATIVO' }
+  let calls = 0
+  const view = renderManagement({
+    path: `/plataforma/condominios/${firstId}`,
+    listLoader: async () => inactiveList,
+    detailLoader: async () => inactiveList[0],
+    activateLoader: async () => { calls += 1; return active },
+  })
+  fireEvent.click(await view.findByRole('button', { name: 'Reativar condomínio' }))
+  assert.ok(view.getByText(/individualmente ativos/))
+  fireEvent.click(view.getAllByRole('button', { name: 'Reativar condomínio' }).at(-1))
+  assert.ok(await view.findByText(/Usuários individualmente ativos podem voltar a acessar/))
+  assert.equal(calls, 1)
+  assert.ok(view.getByRole('button', { name: 'Desativar condomínio' }))
+})
+
+test('desativação divergente preserva estado, indicadores e não anuncia sucesso', async () => {
+  let calls = 0
+  const stillActive = { ...managementRecords[0], status: 'ATIVO' }
+  const view = renderManagement({
+    path: `/plataforma/condominios/${firstId}`,
+    deactivateLoader: (id) => desativarCondominioPlataforma(id, {
+      fetchImpl: async () => {
+        calls += 1
+        return { ok: true, status: 200, text: async () => JSON.stringify(stillActive) }
+      },
+    }),
+  })
+
+  fireEvent.click(await view.findByRole('button', { name: 'Desativar condomínio' }))
+  fireEvent.click(view.getAllByRole('button', { name: 'Desativar condomínio' }).at(-1))
+
+  assert.ok(await view.findByRole('alert', { name: '' }))
+  assert.ok(view.getByText(/servidor não confirmou a desativação/i))
+  assert.equal(view.queryByText('Condomínio desativado. O acesso autenticado está bloqueado.'), null)
+  assert.equal(view.getAllByRole('button', { name: 'Desativar condomínio' }).length, 2)
+  assert.match(view.getByTestId('platform-management-probe').textContent, /^1:1:Residencial Aurora:ATIVO:success$/)
+  await act(async () => Promise.resolve())
+  assert.equal(calls, 1)
+})
+
+test('reativação divergente preserva estado, indicadores e não anuncia sucesso', async () => {
+  let calls = 0
+  const inactiveList = [{ ...managementRecords[0], status: 'INATIVO' }, managementRecords[1]]
+  const stillInactive = inactiveList[0]
+  const view = renderManagement({
+    path: `/plataforma/condominios/${firstId}`,
+    listLoader: async () => inactiveList,
+    detailLoader: async () => stillInactive,
+    activateLoader: (id) => ativarCondominioPlataforma(id, {
+      fetchImpl: async () => {
+        calls += 1
+        return { ok: true, status: 200, text: async () => JSON.stringify(stillInactive) }
+      },
+    }),
+  })
+
+  fireEvent.click(await view.findByRole('button', { name: 'Reativar condomínio' }))
+  fireEvent.click(view.getAllByRole('button', { name: 'Reativar condomínio' }).at(-1))
+
+  assert.ok(await view.findByRole('alert', { name: '' }))
+  assert.ok(view.getByText(/servidor não confirmou a ativação/i))
+  assert.equal(view.queryByText(/Condomínio reativado/), null)
+  assert.equal(view.getAllByRole('button', { name: 'Reativar condomínio' }).length, 2)
+  assert.match(view.getByTestId('platform-management-probe').textContent, /^0:2:Residencial Aurora:INATIVO:success$/)
+  await act(async () => Promise.resolve())
+  assert.equal(calls, 1)
+})
+
+test('falha de rede na mudança de status não repete a operação automaticamente', async () => {
+  let calls = 0
+  const view = renderManagement({
+    path: `/plataforma/condominios/${firstId}`,
+    deactivateLoader: async () => {
+      calls += 1
+      throw Object.assign(new Error('offline'), { status: 0 })
+    },
+  })
+  fireEvent.click(await view.findByRole('button', { name: 'Desativar condomínio' }))
+  fireEvent.click(view.getAllByRole('button', { name: 'Desativar condomínio' }).at(-1))
+  assert.ok(await view.findByText(/Não foi possível confirmar se a operação foi concluída/))
+  await act(async () => Promise.resolve())
+  assert.equal(calls, 1)
+  assert.ok(view.getByRole('dialog'))
+})
+
+test('troca de sessão durante PUT descarta resposta antiga e não navega', async () => {
+  let release
+  const stale = { ...managementRecords[0], nome: 'Resposta antiga' }
+  const view = renderManagement({ updateLoader: () => new Promise((resolve) => { release = resolve }) })
+  const name = await view.findByLabelText('Nome do condomínio')
+  fireEvent.change(name, { target: { value: 'Mudança pendente' } })
+  fireEvent.click(view.getByRole('button', { name: 'Salvar alterações' }))
+  await act(async () => setToken('sessao-master-nova'))
+  await act(async () => release(stale))
+  assert.ok(await view.findByText(/A sessão mudou durante a alteração/))
+  assert.equal(view.queryByText('Dados do condomínio atualizados com sucesso.'), null)
+  assert.equal(view.queryByText('Resposta antiga'), null)
+})
+
+test('desmontagem do Provider invalida PUT e bloqueia atualização tardia', async () => {
+  let release
+  let operation
+  let capturedError
+  function StartUpdate() {
+    const { updateCondominium } = usePlatformData()
+    React.useEffect(() => {
+      operation = updateCondominium(firstId, { nome: 'Novo', cnpj: '04.252.011/0001-10' }).catch((error) => { capturedError = error })
+    }, [updateCondominium])
+    return React.createElement('span', null, 'Alteração iniciada')
+  }
+  const view = render(React.createElement(PlatformDataProvider, {
+    listLoader: async () => managementRecords,
+    updateLoader: () => new Promise((resolve) => { release = resolve }),
+    apiActive: true,
+  }, React.createElement(StartUpdate)))
+  await view.findByText('Alteração iniciada')
+  await waitFor(() => assert.equal(typeof release, 'function'))
+  view.unmount()
+  await act(async () => release({ ...managementRecords[0], nome: 'Resposta tardia' }))
+  await operation
+  assert.equal(capturedError?.status, 409)
+  assert.match(capturedError?.message || '', /sessão mudou durante a alteração/i)
+})
+
+test('o Provider impede edição e mudança de status simultâneas no mesmo condomínio', async () => {
+  let release
+  let updateOperation
+  let statusError
+  let deactivateCalls = 0
+  function StartConcurrentMutations() {
+    const { deactivateCondominium, updateCondominium } = usePlatformData()
+    React.useEffect(() => {
+      updateOperation = updateCondominium(firstId, { nome: 'Novo', cnpj: '04.252.011/0001-10' })
+      deactivateCondominium(firstId).catch((error) => { statusError = error })
+    }, [deactivateCondominium, updateCondominium])
+    return React.createElement('span', null, 'Operações iniciadas')
+  }
+  const view = render(React.createElement(PlatformDataProvider, {
+    listLoader: async () => managementRecords,
+    updateLoader: () => new Promise((resolve) => { release = resolve }),
+    deactivateLoader: async () => { deactivateCalls += 1; return { ...managementRecords[0], status: 'INATIVO' } },
+    apiActive: true,
+  }, React.createElement(StartConcurrentMutations)))
+  await view.findByText('Operações iniciadas')
+  await waitFor(() => assert.equal(statusError?.status, 409))
+  assert.equal(deactivateCalls, 0)
+  await act(async () => release({ ...managementRecords[0], nome: 'Novo' }))
+  await updateOperation
 })
