@@ -12,7 +12,7 @@ export function formatCpf(value = '') {
 export function cpfComplete(value = '') { return String(value).replace(/\D/g, '').length === 11 }
 
 // `perfil` é texto livre no backend (ex.: ADMIN, Portaria, Morador); cada um abre uma área do front.
-const profilePaths = { ADMIN: '/admin', ADMINISTRADOR: '/admin', ADMINISTRACAO: '/admin', PORTARIA: '/portaria', PORTEIRO: '/portaria', MORADOR: '/morador' }
+const profilePaths = { MASTER: '/plataforma', ADMIN: '/admin', ADMINISTRADOR: '/admin', ADMINISTRACAO: '/admin', PORTARIA: '/portaria', PORTEIRO: '/portaria', MORADOR: '/morador' }
 
 export function profilePath(perfil = '') {
   const key = String(perfil).normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase()

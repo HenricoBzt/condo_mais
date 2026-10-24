@@ -3,8 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useAppData } from '../../context/AppDataContext'
 import AuthLayout from '../../layouts/AuthLayout'
-import { apiEnabled } from '../../services/api'
-import { cpfComplete, formatCpf, primeiroAcesso } from '../../services/authApi'
+import { apiEnabled, getToken } from '../../services/api'
+import { cpfComplete, formatCpf, logout, primeiroAcesso } from '../../services/authApi'
+import { authenticateAndEnter } from '../../features/session/authenticatedNavigation'
 
 const content = {
   first: { title: 'Primeiro acesso', text: 'Vamos verificar seu cadastro para ativar sua conta.', fields: ['CPF'], action: 'Continuar', next: '/criar-senha' },
@@ -44,9 +45,13 @@ function AuthFlowStep({ step }) {
     if (apiEnabled() && step === 'create') {
       setSubmitting(true)
       try {
-        const { path } = await primeiroAcesso(activationCpf, values['Nova senha'])
-        actions.reloadAll()
-        navigate(path)
+        await authenticateAndEnter({
+          authenticate: () => primeiroAcesso(activationCpf, values['Nova senha']),
+          restoreSession: actions.reloadSession,
+          navigate,
+          getSessionKey: getToken,
+          invalidateSession: logout,
+        })
       } catch (activationError) {
         setInvalidField('')
         setError(activationError.message)

@@ -1,4 +1,5 @@
 import { ApiError, apiDelete, apiGet, apiPost, apiPut, condominioIdFromToken } from './api.js'
+import { carregarSessaoAtual } from './sessionApi.js'
 
 function condominioId() {
   const id = condominioIdFromToken()
@@ -63,8 +64,14 @@ export async function carregarCadastros(options) {
 
 // Usuário logado (GET /usuarios/me, qualquer perfil): monta a área do morador com os dados reais
 export async function carregarUsuarioLogado(options) {
-  const usuario = await apiGet('/usuarios/me', {}, options)
-  return { currentResident: toResident(usuario), condominiumName: usuario.condominioNome || '' }
+  const usuario = await carregarSessaoAtual(options)
+  return {
+    currentResident: toResident(usuario),
+    condominiumName: usuario.condominioNome || '',
+    profile: usuario.perfil || '',
+    setupState: usuario.configuracaoInicial || '',
+    condominiumModel: usuario.modeloCondominio || '',
+  }
 }
 
 export async function criarTorre(nome, options) {

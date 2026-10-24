@@ -7,6 +7,9 @@ import EntityPage from './pages/desktop/EntityPage'
 import AdminSettingsPage from './pages/desktop/AdminSettingsPage'
 import VerticalSetupWizardPage from './pages/desktop/VerticalSetupWizardExperience'
 import AdminSetupAccessGate from './components/AdminSetupAccessGate'
+import SessionAccessGate from './components/SessionAccessGate'
+import { SESSION_AREA } from './features/session/sessionAccess'
+import PlatformHomePage from './pages/platform/PlatformHomePage'
 import { CommunicationDetail, CommunicationsPage, MorePage, ProfilePage, ResidentListPage } from './pages/morador/ResidentPages'
 
 export default function App() {
@@ -18,32 +21,41 @@ export default function App() {
       <Route path="/recuperar-senha" element={<AuthFlowPage step="recovery1" />} />
       <Route path="/recuperar-senha/verificar" element={<AuthFlowPage step="recovery2" />} />
       <Route path="/recuperar-senha/nova-senha" element={<AuthFlowPage step="recovery3" />} />
-      <Route path="/morador" element={<ResidentDashboard />} />
-      <Route path="/morador/comunicados" element={<CommunicationsPage />} />
-      <Route path="/morador/comunicados/:id" element={<CommunicationDetail />} />
-      <Route path="/morador/mais" element={<MorePage />} />
-      <Route path="/morador/reservas" element={<ResidentListPage type="reservas" />} />
-      <Route path="/morador/visitantes" element={<ResidentListPage type="visitantes" />} />
-      <Route path="/morador/chamados" element={<ResidentListPage type="chamados" />} />
-      <Route path="/morador/aprovacoes" element={<ResidentListPage type="aprovacoes" />} />
-      <Route path="/morador/perfil" element={<ProfilePage />} />
-      <Route path="/portaria" element={<DesktopDashboard role="portaria" />} />
-      <Route path="/portaria/visitantes" element={<EntityPage role="portaria" type="visitantesPortaria" />} />
-      <Route path="/portaria/prestadores" element={<EntityPage role="portaria" type="prestadores" />} />
-      <Route path="/portaria/encomendas" element={<EntityPage role="portaria" type="encomendasPortaria" />} />
-      <Route path="/portaria/avisos" element={<EntityPage role="portaria" type="avisos" />} />
-      <Route path="/portaria/chamados" element={<EntityPage role="portaria" type="chamadosPortaria" />} />
-      <Route path="/portaria/historico" element={<EntityPage role="portaria" type="historico" />} />
-      <Route path="/admin" element={<DesktopDashboard role="admin" />} />
-      <Route path="/admin/moradores" element={<EntityPage role="admin" type="moradores" />} />
-      <Route path="/admin/unidades" element={<EntityPage role="admin" type="unidades" />} />
-      <Route path="/admin/encomendas" element={<EntityPage role="admin" type="encomendasAdmin" />} />
-      <Route path="/admin/reservas" element={<EntityPage role="admin" type="reservas" />} />
-      <Route path="/admin/visitantes" element={<EntityPage role="admin" type="visitantesAdmin" />} />
-      <Route path="/admin/comunicados" element={<EntityPage role="admin" type="comunicados" />} />
-      <Route path="/admin/chamados" element={<EntityPage role="admin" type="chamadosAdmin" />} />
-      <Route path="/admin/configuracoes" element={<AdminSettingsPage />} />
+      <Route element={<SessionAccessGate area={SESSION_AREA.MORADOR} />}>
+        <Route path="/morador" element={<ResidentDashboard />} />
+        <Route path="/morador/comunicados" element={<CommunicationsPage />} />
+        <Route path="/morador/comunicados/:id" element={<CommunicationDetail />} />
+        <Route path="/morador/mais" element={<MorePage />} />
+        <Route path="/morador/reservas" element={<ResidentListPage type="reservas" />} />
+        <Route path="/morador/visitantes" element={<ResidentListPage type="visitantes" />} />
+        <Route path="/morador/chamados" element={<ResidentListPage type="chamados" />} />
+        <Route path="/morador/aprovacoes" element={<ResidentListPage type="aprovacoes" />} />
+        <Route path="/morador/perfil" element={<ProfilePage />} />
+      </Route>
+      <Route element={<SessionAccessGate area={SESSION_AREA.PORTARIA} />}>
+        <Route path="/portaria" element={<DesktopDashboard role="portaria" />} />
+        <Route path="/portaria/visitantes" element={<EntityPage role="portaria" type="visitantesPortaria" />} />
+        <Route path="/portaria/prestadores" element={<EntityPage role="portaria" type="prestadores" />} />
+        <Route path="/portaria/encomendas" element={<EntityPage role="portaria" type="encomendasPortaria" />} />
+        <Route path="/portaria/avisos" element={<EntityPage role="portaria" type="avisos" />} />
+        <Route path="/portaria/chamados" element={<EntityPage role="portaria" type="chamadosPortaria" />} />
+        <Route path="/portaria/historico" element={<EntityPage role="portaria" type="historico" />} />
+      </Route>
+      <Route element={<SessionAccessGate area={SESSION_AREA.ADMIN} />}>
+        <Route path="/admin" element={<DesktopDashboard role="admin" />} />
+        <Route path="/admin/moradores" element={<EntityPage role="admin" type="moradores" />} />
+        <Route path="/admin/unidades" element={<EntityPage role="admin" type="unidades" />} />
+        <Route path="/admin/encomendas" element={<EntityPage role="admin" type="encomendasAdmin" />} />
+        <Route path="/admin/reservas" element={<EntityPage role="admin" type="reservas" />} />
+        <Route path="/admin/visitantes" element={<EntityPage role="admin" type="visitantesAdmin" />} />
+        <Route path="/admin/comunicados" element={<EntityPage role="admin" type="comunicados" />} />
+        <Route path="/admin/chamados" element={<EntityPage role="admin" type="chamadosAdmin" />} />
+        <Route path="/admin/configuracoes" element={<AdminSettingsPage />} />
+      </Route>
       <Route path="/admin/configuracao-inicial" element={<AdminSetupAccessGate><VerticalSetupWizardPage /></AdminSetupAccessGate>} />
+      <Route element={<SessionAccessGate area={SESSION_AREA.PLATFORM} />}>
+        <Route path="/plataforma" element={<PlatformHomePage />} />
+      </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

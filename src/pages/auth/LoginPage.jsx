@@ -4,8 +4,9 @@ import { useNavigate } from 'react-router-dom'
 import { useAppData } from '../../context/AppDataContext'
 import AuthLayout from '../../layouts/AuthLayout'
 import { validateMockLogin } from '../../mocks/mockUsers'
-import { apiEnabled } from '../../services/api'
-import { cpfComplete, formatCpf, login } from '../../services/authApi'
+import { apiEnabled, getToken } from '../../services/api'
+import { cpfComplete, formatCpf, login, logout } from '../../services/authApi'
+import { authenticateAndEnter } from '../../features/session/authenticatedNavigation'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -34,10 +35,14 @@ export default function LoginPage() {
     if (missing.length) { setInvalidFields(missing); setError(missing.includes('cpf') && cpf.trim() ? 'Informe o CPF completo.' : 'Preencha o CPF e a senha.'); return }
     setSubmitting(true)
     try {
-      const { path } = await login(cpf, password)
+      await authenticateAndEnter({
+        authenticate: () => login(cpf, password),
+        restoreSession: actions.reloadSession,
+        navigate,
+        getSessionKey: getToken,
+        invalidateSession: logout,
+      })
       setError('')
-      actions.reloadAll()
-      navigate(path)
     } catch (loginError) {
       setInvalidFields(loginError.status === 401 ? ['cpf', 'password'] : [])
       setError(loginError.message)

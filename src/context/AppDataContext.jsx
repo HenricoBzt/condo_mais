@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { initialAppData } from '../mocks/appData'
-import { apiEnabled } from '../services/api'
+import { apiEnabled, getToken } from '../services/api'
+import { loadSessionBeforeOperational } from '../features/session/sessionAccess'
+import { notifySessionChanged } from '../services/sessionEvents'
 import { alterarStatusMorador, carregarCadastros, carregarUsuarioLogado, criarTorre, excluirUnidade, salvarMorador, salvarUnidade } from '../services/cadastrosApi'
 import { avisosService } from '../services/avisosService'
 import { moradoresService, unidadesService } from '../services/cadastrosService'
@@ -35,23 +37,31 @@ export function AppDataProvider({ children }) {
   const initialRemote = { status: apiEnabled() ? 'loading' : 'idle', error: '' }
   const [remote, setRemote] = useState({ units: initialRemote, residents: initialRemote })
   const cadastrosRequest = useRef(0)
+  const sessionRequest = useRef(0)
+  const operationalAuthorization = useRef({ allowed: false, token: '', sessionRequest: 0 })
   const dataRef = useRef(data)
   dataRef.current = data
 
   const actions = useMemo(() => {
     const setCadastrosStatus = (state) => setRemote((current) => ({ ...current, units: state, residents: state }))
 
+    const authorizationIsCurrent = (authorization) => authorization.allowed
+      && authorization.token === getToken()
+      && authorization.sessionRequest === sessionRequest.current
+
     // Recarrega torres, unidades e moradores; resposta obsoleta não sobrescreve a mais nova
     async function reloadCadastros({ silent = false } = {}) {
+      const authorization = operationalAuthorization.current
+      if (!authorizationIsCurrent(authorization)) return
       const request = ++cadastrosRequest.current
       if (!silent) setCadastrosStatus({ status: 'loading', error: '' })
       try {
         const { towers, units, residents } = await carregarCadastros()
-        if (request !== cadastrosRequest.current) return
+        if (request !== cadastrosRequest.current || !authorizationIsCurrent(authorization)) return
         setData((current) => ({ ...current, towers, units, residents }))
         setCadastrosStatus({ status: 'success', error: '' })
       } catch (error) {
-        if (request !== cadastrosRequest.current) return
+        if (request !== cadastrosRequest.current || !authorizationIsCurrent(authorization)) return
         setCadastrosStatus({ status: 'error', error: error.message })
       }
     }
@@ -62,21 +72,62 @@ export function AppDataProvider({ children }) {
       await reloadCadastros({ silent: true })
     }
 
-    // Usuário logado: identidade do morador e nome do condomínio
-    async function reloadSession() {
-      // Limpa antes: ao trocar de usuário na mesma aba, a identidade anterior não aparece
-      setData((current) => ({ ...current, currentResident: emptyResident }))
+    // Confirma /usuarios/me antes de decidir se a sessão pode carregar dados operacionais.
+    async function restoreSession() {
+      const request = ++sessionRequest.current
+      const token = getToken()
+      const previousToken = operationalAuthorization.current.token
+      if (previousToken && previousToken === token) notifySessionChanged()
+      const isCurrent = () => request === sessionRequest.current && token === getToken()
+      operationalAuthorization.current = { allowed: false, token, sessionRequest: request }
+      ++cadastrosRequest.current
+      setData((current) => ({
+        ...current,
+        currentResident: emptyResident,
+        condominium: { ...current.condominium, name: '' },
+        towers: [], units: [], residents: [],
+      }))
+      setCadastrosStatus({ status: 'loading', error: '' })
       try {
-        const { currentResident, condominiumName } = await carregarUsuarioLogado()
-        setData((current) => ({ ...current, currentResident, condominium: { ...current.condominium, name: condominiumName } }))
-      } catch {
-        // Sem sessão: a área continua vazia e as telas integradas mostram “Sessão inválida”
+        const result = await loadSessionBeforeOperational({
+          loadCurrentUser: carregarUsuarioLogado,
+          loadOperationalData: async () => {
+            if (!isCurrent()) return null
+            operationalAuthorization.current = { allowed: true, token, sessionRequest: request }
+            return carregarCadastros()
+          },
+          isCurrent,
+        })
+        if (!isCurrent() || result.status === 'stale') {
+          const staleError = new Error('A sessão mudou durante a verificação. Tente novamente.')
+          staleError.status = 409
+          throw staleError
+        }
+        const { currentResident, condominiumName } = result.session
+        const operationalAllowed = ['operational', 'operational-error'].includes(result.status)
+        operationalAuthorization.current = { allowed: operationalAllowed, token, sessionRequest: request }
+        setData((current) => ({
+          ...current,
+          currentResident,
+          condominium: { ...current.condominium, name: condominiumName },
+          ...(result.status === 'operational' ? result.operational : {}),
+        }))
+        setCadastrosStatus(result.status === 'operational-error'
+          ? { status: 'error', error: result.error.message }
+          : { status: 'success', error: '' })
+        return result
+      } catch (error) {
+        if (!isCurrent()) throw error
+        operationalAuthorization.current = { allowed: false, token, sessionRequest: request }
+        setCadastrosStatus({ status: 'error', error: error.message })
+        throw error
       }
     }
 
     return {
     reloadCadastros,
-    reloadAll: () => Promise.all([reloadCadastros(), reloadSession()]),
+    reloadSession: restoreSession,
+    reloadAll: restoreSession,
     createTower: (name) => command(() => criarTorre(name)),
     saveUnitRemote: (form, editingId) => command(() => salvarUnidade(form, editingId, dataRef.current.towers)),
     deleteUnitRemote: (id) => command(() => excluirUnidade(id)),
@@ -128,7 +179,11 @@ export function AppDataProvider({ children }) {
     }
   }, [])
 
-  useEffect(() => { if (apiEnabled()) actions.reloadAll() }, [actions])
+  useEffect(() => {
+    if (!apiEnabled()) return
+    if (!getToken()) return
+    actions.reloadSession().catch(() => {})
+  }, [actions])
 
   return <AppDataContext.Provider value={{ data, actions, remote }}>{children}</AppDataContext.Provider>
 }
