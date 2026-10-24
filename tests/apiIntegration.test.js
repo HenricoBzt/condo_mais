@@ -1,12 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, apiGet, condominioIdFromToken, setToken, tokenClaims } from '../src/services/api.js'
+import { ApiError, apiGet, condominioIdFromToken, getToken, setToken, tokenClaims } from '../src/services/api.js'
+import { subscribeToSessionChanges } from '../src/services/sessionEvents.js'
 import { createTestServer } from './viteTestServer.js'
 import { alterarStatusMorador, carregarCadastros, carregarUsuarioLogado, criarTorre, excluirUnidade, linkResidents, salvarMorador, salvarUnidade, toResident, toUnit } from '../src/services/cadastrosApi.js'
 
 // sessionStorage mínimo para o Node; cada teste define o próprio token.
 const storage = new Map()
 globalThis.sessionStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)), removeItem: (key) => storage.delete(key) }
+globalThis.window = new EventTarget()
 
 const base64url = (value) => Buffer.from(JSON.stringify(value)).toString('base64url')
 const fakeJwt = (claims) => `${base64url({ alg: 'HS256' })}.${base64url(claims)}.assinatura`
@@ -47,6 +49,31 @@ test('apiGet converte falhas HTTP e de rede em ApiError com mensagem amigável',
   await assert.rejects(apiGet('/x', {}, forbidden), (error) => error.status === 403 && /não tem permissão/.test(error.message))
   const offline = async () => { throw new TypeError('Failed to fetch') }
   await assert.rejects(apiGet('/x', {}, { fetchImpl: offline }), (error) => error.status === 0 && /conectar ao servidor/.test(error.message))
+})
+
+test('401 invalida somente o token que originou a requisição e notifica a sessão', async () => {
+  setToken('token-expirado')
+  let notifications = 0
+  const unsubscribe = subscribeToSessionChanges(() => { notifications += 1 })
+  try {
+    await assert.rejects(apiGet('/plataforma/condominios', {}, fakeFetch([['/plataforma/condominios', 401, {}]])), (error) => error.status === 401)
+    assert.equal(getToken(), '')
+    assert.equal(notifications, 1)
+  } finally { unsubscribe() }
+})
+
+test('401 atrasado de token antigo não encerra sessão nova e 403 não invalida token', async () => {
+  setToken('token-antigo')
+  let release
+  const delayedFetch = () => new Promise((resolve) => { release = resolve })
+  const oldRequest = apiGet('/plataforma/condominios', {}, { fetchImpl: delayedFetch })
+  setToken('token-novo')
+  release({ ok: false, status: 401, json: async () => ({}), text: async () => '{}' })
+  await assert.rejects(oldRequest, (error) => error.status === 401)
+  assert.equal(getToken(), 'token-novo')
+
+  await assert.rejects(apiGet('/plataforma/condominios', {}, fakeFetch([['/plataforma/condominios', 403, {}]])), (error) => error.status === 403)
+  assert.equal(getToken(), 'token-novo')
 })
 
 test('erros de negócio exibem a mensagem da API; sessão e falha interna usam texto fixo', async () => {

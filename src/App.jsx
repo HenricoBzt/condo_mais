@@ -9,7 +9,11 @@ import VerticalSetupWizardPage from './pages/desktop/VerticalSetupWizardExperien
 import AdminSetupAccessGate from './components/AdminSetupAccessGate'
 import SessionAccessGate from './components/SessionAccessGate'
 import { SESSION_AREA } from './features/session/sessionAccess'
-import PlatformHomePage from './pages/platform/PlatformHomePage'
+import { PlatformDataProvider } from './context/PlatformDataContext'
+import PlatformLayout from './layouts/PlatformLayout'
+import PlatformDashboardPage from './pages/platform/PlatformDashboardPage'
+import PlatformCondominiumsPage from './pages/platform/PlatformCondominiumsPage'
+import PlatformCondominiumDetailPage from './pages/platform/PlatformCondominiumDetailPage'
 import { CommunicationDetail, CommunicationsPage, MorePage, ProfilePage, ResidentListPage } from './pages/morador/ResidentPages'
 
 export default function App() {
@@ -54,7 +58,11 @@ export default function App() {
       </Route>
       <Route path="/admin/configuracao-inicial" element={<AdminSetupAccessGate><VerticalSetupWizardPage /></AdminSetupAccessGate>} />
       <Route element={<SessionAccessGate area={SESSION_AREA.PLATFORM} />}>
-        <Route path="/plataforma" element={<PlatformHomePage />} />
+        <Route element={<PlatformDataProvider><PlatformLayout /></PlatformDataProvider>}>
+          <Route path="/plataforma" element={<PlatformDashboardPage />} />
+          <Route path="/plataforma/condominios" element={<PlatformCondominiumsPage />} />
+          <Route path="/plataforma/condominios/:id" element={<PlatformCondominiumDetailPage />} />
+        </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
