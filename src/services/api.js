@@ -54,7 +54,7 @@ async function responseError(response) {
   return new ApiError(response.status, message)
 }
 
-async function request(method, path, { params = {}, body, fetchImpl = fetch } = {}) {
+async function request(method, path, { params = {}, body, fetchImpl = fetch, expectedStatus } = {}) {
   const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')).toString()
   const token = getToken()
   const headers = { Accept: 'application/json', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) }
@@ -70,6 +70,9 @@ async function request(method, path, { params = {}, body, fetchImpl = fetch } = 
     if (response.status === 401 && token && token === getToken()) setToken('')
     throw error
   }
+  if (expectedStatus !== undefined && response.status !== expectedStatus) {
+    throw new ApiError(502, `O servidor respondeu com status inesperado (${response.status}).`)
+  }
   if (response.status === 204) return null
   // DELETE e alguns PUT respondem 200 sem corpo; /auth/primeiro-acesso responde texto puro
   const text = await response.text()
@@ -79,7 +82,7 @@ async function request(method, path, { params = {}, body, fetchImpl = fetch } = 
 
 export function apiGet(path, params = {}, { fetchImpl } = {}) { return request('GET', path, { params, fetchImpl }) }
 
-export function apiPost(path, body, { fetchImpl } = {}) { return request('POST', path, { body, fetchImpl }) }
+export function apiPost(path, body, { fetchImpl, expectedStatus } = {}) { return request('POST', path, { body, fetchImpl, expectedStatus }) }
 
 export function apiPut(path, body, { fetchImpl } = {}) { return request('PUT', path, { body, fetchImpl }) }
 

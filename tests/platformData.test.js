@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { assertPlatformCondominiumDto, assertPlatformCondominiumListDto, filterPlatformCondominiums, normalizePlatformCondominium, platformIndicators } from '../src/features/platform/platformData.js'
-import { listarCondominiosPlataforma, buscarCondominioPlataforma } from '../src/services/platformApi.js'
+import { listarCondominiosPlataforma, buscarCondominioPlataforma, criarCondominioPlataforma } from '../src/services/platformApi.js'
 import { setToken } from '../src/services/api.js'
 
 const storage = new Map()
@@ -113,4 +113,29 @@ test('serviço rejeita respostas incompatíveis e detalhe sem identificador', as
   await assert.rejects(buscarCondominioPlataforma(ids[0], { fetchImpl: fakeFetch(200, {}) }), (error) => error.status === 502)
   await assert.rejects(listarCondominiosPlataforma({ fetchImpl: fakeFetch(200, [condominium(), {}]) }), (error) => error.status === 502)
   await assert.rejects(listarCondominiosPlataforma({ fetchImpl: fakeFetch(200, [7]) }), (error) => error.status === 502)
+})
+
+test('cadastro usa somente POST autorizado, payload exato e exige resposta 201 válida', async () => {
+  setToken('token-master')
+  const payload = { condominio: { nome: 'Novo', cnpj: '04.252.011/0001-10' }, admin: { nome: 'Maria', cpf: '529.982.247-25', email: null, telefone: null } }
+  const calls = []
+  const created = condominium({ administradores: [administrator()] })
+  assert.deepEqual(await criarCondominioPlataforma(payload, { fetchImpl: fakeFetch(201, created, calls) }), created)
+  assert.equal(calls[0].init.method, 'POST')
+  assert.match(calls[0].url, /\/plataforma\/condominios$/)
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer token-master')
+  assert.deepEqual(JSON.parse(calls[0].init.body), payload)
+
+  await assert.rejects(criarCondominioPlataforma(payload, { fetchImpl: fakeFetch(200, created) }), (error) => error.status === 502 && /status inesperado/.test(error.message))
+  await assert.rejects(criarCondominioPlataforma(payload, { fetchImpl: fakeFetch(201, {}) }), (error) => error.status === 502)
+})
+
+test('cadastro preserva erros 400, 401, 403, 409, 500 e falha de rede', async () => {
+  const payload = { condominio: { nome: 'Novo', cnpj: '04.252.011/0001-10' }, admin: { nome: 'Maria', cpf: '529.982.247-25', email: null, telefone: null } }
+  for (const status of [400, 401, 403, 409, 500]) {
+    setToken('token-master')
+    await assert.rejects(criarCondominioPlataforma(payload, { fetchImpl: fakeFetch(status, { mensagem: `erro-${status}` }) }), (error) => error.status === status)
+  }
+  setToken('token-master')
+  await assert.rejects(criarCondominioPlataforma(payload, { fetchImpl: async () => { throw new Error('offline') } }), (error) => error.status === 0)
 })

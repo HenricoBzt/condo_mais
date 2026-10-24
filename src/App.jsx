@@ -14,6 +14,7 @@ import PlatformLayout from './layouts/PlatformLayout'
 import PlatformDashboardPage from './pages/platform/PlatformDashboardPage'
 import PlatformCondominiumsPage from './pages/platform/PlatformCondominiumsPage'
 import PlatformCondominiumDetailPage from './pages/platform/PlatformCondominiumDetailPage'
+import PlatformCondominiumCreatePage from './pages/platform/PlatformCondominiumCreatePage'
 import { CommunicationDetail, CommunicationsPage, MorePage, ProfilePage, ResidentListPage } from './pages/morador/ResidentPages'
 
 export default function App() {
@@ -61,6 +62,7 @@ export default function App() {
         <Route element={<PlatformDataProvider><PlatformLayout /></PlatformDataProvider>}>
           <Route path="/plataforma" element={<PlatformDashboardPage />} />
           <Route path="/plataforma/condominios" element={<PlatformCondominiumsPage />} />
+          <Route path="/plataforma/condominios/novo" element={<PlatformCondominiumCreatePage />} />
           <Route path="/plataforma/condominios/:id" element={<PlatformCondominiumDetailPage />} />
         </Route>
       </Route>

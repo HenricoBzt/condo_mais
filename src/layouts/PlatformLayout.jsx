@@ -31,7 +31,7 @@ export default function PlatformLayout() {
       menuButtonRef.current?.focus()
     }
   }, [menuOpen])
-  const pageName = location.pathname.includes('/condominios') ? 'Condomínios' : 'Dashboard'
+  const pageName = location.pathname.endsWith('/condominios/novo') ? 'Novo condomínio' : location.pathname.includes('/condominios') ? 'Condomínios' : 'Dashboard'
 
   return <div className="platform-app-shell">
     <aside className={`platform-sidebar${menuOpen ? ' platform-sidebar--open' : ''}`} aria-label="Navegação da plataforma">
