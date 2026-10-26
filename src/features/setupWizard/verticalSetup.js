@@ -244,6 +244,34 @@ export function validateStepDetails(step, draft) {
 
 export const validateStep = (step, draft) => validateStepDetails(step, draft).map((error) => error.message)
 
+// Corpo de POST /condominios/configuracao-inicial. Vão os parâmetros de cada torre, não a lista de
+// unidades: o backend gera os números com a mesma regra da prévia. O nome do condomínio não vai,
+// porque só a administração da plataforma (MASTER) altera nome e CNPJ.
+export function buildSetupPayload(draft) {
+  const area = (name, reservable) => ({ nome: name.trim(), descricao: null, reservavel: Boolean(reservable), exigeAprovacao: false, capacidade: null })
+  return {
+    modelo: draft.residentialModel || 'VERTICAL',
+    endereco: draft.condominium.address.trim(),
+    cidade: draft.condominium.city.trim(),
+    estado: draft.condominium.state,
+    torres: draft.towers.map((tower) => ({
+      nome: tower.name.trim(),
+      andares: strictInteger(tower.floorCount),
+      unidadesPorAndar: strictInteger(tower.unitsPerFloor),
+      andarInicial: strictInteger(tower.firstFloor),
+      sequenciaInicial: strictInteger(tower.firstUnit),
+      digitos: strictInteger(tower.unitDigits),
+      separador: tower.separator || '',
+    })),
+    // As áreas sugeridas entram sem reserva; as personalizadas seguem a marcação feita na tela.
+    // Reserva e aprovação podem ser ajustadas depois, no cadastro de áreas comuns.
+    areasComuns: [
+      ...draft.commonAreas.map((name) => area(name, false)),
+      ...draft.customAreas.map((custom) => area(custom.name, custom.reservable)),
+    ],
+  }
+}
+
 export function wizardReducer(state, action) {
   switch (action.type) {
     case 'UPDATE_CONDOMINIUM':
