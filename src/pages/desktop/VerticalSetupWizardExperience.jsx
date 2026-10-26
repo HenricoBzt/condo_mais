@@ -1,9 +1,11 @@
 import { cloneElement, useEffect, useReducer, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Building2, Check, ChevronLeft, ChevronRight, CircleAlert, Plus, Trash2 } from 'lucide-react'
 import SetupLayout from '../../layouts/SetupLayout'
 import {
   PREDEFINED_COMMON_AREAS,
   SETUP_STEPS,
+  buildSetupPayload,
   createInitialWizardState,
   getTowerUnitCount,
   getTowerUnitPreview,
@@ -12,6 +14,9 @@ import {
   validateStepDetails,
   wizardReducer,
 } from '../../features/setupWizard/verticalSetup'
+import { ApiError } from '../../services/api'
+import { carregarSessaoAtual } from '../../services/sessionApi'
+import { salvarConfiguracaoInicial } from '../../services/setupApi'
 
 const stateOptions = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
 
@@ -34,10 +39,10 @@ function Field({ label, id, fieldKey, error, children, hint }) {
   </div>
 }
 
-function CondominiumStep({ condominium, dispatch, errors }) {
+function CondominiumStep({ condominium, nameLocked, dispatch, errors }) {
   const update = (field) => (event) => dispatch({ type: 'UPDATE_CONDOMINIUM', field, value: event.target.value })
   return <div className="setup-form-grid">
-    <Field label="Nome do condomínio" id="setup-condominium-name" fieldKey="condominium.name" error={findError(errors, 'condominium.name')}><input value={condominium.name} onChange={update('name')} placeholder="Ex.: Condomínio Parque das Flores" /></Field>
+    <Field label="Nome do condomínio" id="setup-condominium-name" fieldKey="condominium.name" error={findError(errors, 'condominium.name')} hint={nameLocked ? 'Cadastrado pela administração da plataforma. Só ela altera nome e CNPJ.' : undefined}><input value={condominium.name} onChange={update('name')} readOnly={nameLocked} placeholder="Ex.: Condomínio Parque das Flores" /></Field>
     <Field label="Endereço" id="setup-condominium-address" fieldKey="condominium.address" error={findError(errors, 'condominium.address')}><input value={condominium.address} onChange={update('address')} placeholder="Rua, número e complemento" /></Field>
     <Field label="Cidade" id="setup-condominium-city" fieldKey="condominium.city" error={findError(errors, 'condominium.city')}><input value={condominium.city} onChange={update('city')} /></Field>
     <Field label="Estado" id="setup-condominium-state" fieldKey="condominium.state" error={findError(errors, 'condominium.state')}><select value={condominium.state} onChange={update('state')}><option value="">Selecione</option>{stateOptions.map((state) => <option value={state} key={state}>{state}</option>)}</select></Field>
@@ -113,22 +118,53 @@ function SectionHeading({ children, onEdit, label }) {
   return <div className="setup-summary-heading"><h3>{children}</h3><button type="button" className="setup-edit-button" onClick={onEdit} aria-label={`Editar ${label}`}>Editar</button></div>
 }
 
-function SummaryStep({ draft, totalUnits, reviewed, dispatch, onEdit }) {
+function SummaryStep({ draft, totalUnits, submitting, submitError, onSubmit, onEdit }) {
   const areas = [...draft.commonAreas, ...draft.customAreas.map((area) => area.name)]
-  return <div className="setup-summary"><div className="setup-review-notice"><CircleAlert size={20} /><p><strong>Esta é apenas uma revisão local.</strong> Nenhum dado será enviado ou salvo no banco enquanto a integração com o backend não estiver disponível.</p></div>
+  return <div className="setup-summary"><div className="setup-review-notice"><CircleAlert size={20} /><p><strong>Confira antes de concluir.</strong> Ao concluir, o condomínio é criado com estas torres, unidades e áreas comuns, e a configuração inicial não pode ser refeita por aqui.</p></div>
     <section><SectionHeading onEdit={() => onEdit(0)} label="dados do condomínio">Condomínio</SectionHeading><dl><div><dt>Nome</dt><dd>{draft.condominium.name}</dd></div><div><dt>Endereço</dt><dd>{draft.condominium.address}</dd></div><div><dt>Cidade/UF</dt><dd>{draft.condominium.city} — {draft.condominium.state}</dd></div><div><dt>Modelo</dt><dd>Condomínio Vertical</dd></div></dl></section>
     <section><SectionHeading onEdit={() => onEdit(2)} label="torres e unidades">Estrutura residencial</SectionHeading><div className="setup-summary-towers">{draft.towers.map((tower) => <div key={tower.id}><strong>{tower.name}</strong><span>{tower.floorCount} andares</span><span>{tower.unitsPerFloor} unidades por andar</span><span>{getTowerUnitCount(tower)} unidades geradas</span></div>)}</div><p className="setup-summary-total"><strong>{totalUnits}</strong> unidades no total</p></section>
     <section><SectionHeading onEdit={() => onEdit(4)} label="áreas comuns">Áreas comuns</SectionHeading>{areas.length ? <div className="setup-summary-tags">{areas.map((area) => <span key={area}>{area}</span>)}</div> : <p className="muted">Nenhuma área comum selecionada.</p>}</section>
-    <button type="button" className="desktop-primary setup-review-button" onClick={() => dispatch({ type: 'SET_REVIEWED' })}>{reviewed ? <><Check size={18} /> Revisão concluída</> : 'Concluir revisão local'}</button>
-    {reviewed && <p className="setup-success" role="status"><Check size={19} /> Configuração revisada. Os dados permanecem somente nesta tela e ainda não foram persistidos.</p>}
+    {submitError && <div className="setup-errors" role="alert"><CircleAlert size={20} /><div><strong>Não foi possível concluir a configuração.</strong><p>{submitError}</p></div></div>}
+    <button type="button" className="desktop-primary setup-review-button" onClick={onSubmit} disabled={submitting} aria-busy={submitting ? 'true' : undefined}>{submitting ? 'Salvando configuração…' : <><Check size={18} /> Concluir configuração</>}</button>
   </div>
 }
 
-export default function VerticalSetupWizardExperience() {
+export default function VerticalSetupWizardExperience({ loadCurrentUser = carregarSessaoAtual, saveSetup = salvarConfiguracaoInicial }) {
   const [state, dispatch] = useReducer(wizardReducer, undefined, createInitialWizardState)
   const [errors, setErrors] = useState([])
+  const [nameLocked, setNameLocked] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const formRef = useRef(null)
+  const navigate = useNavigate()
   const totalUnits = getTotalUnitCount(state.draft.towers)
+
+  // O nome vem do cadastro feito pelo MASTER; sem ele (falha na consulta), o campo continua editável
+  useEffect(() => {
+    let current = true
+    Promise.resolve().then(() => loadCurrentUser()).then((user) => {
+      const name = typeof user?.condominioNome === 'string' ? user.condominioNome.trim() : ''
+      if (!current || !name) return
+      dispatch({ type: 'UPDATE_CONDOMINIUM', field: 'name', value: name })
+      setNameLocked(true)
+    }, () => {})
+    return () => { current = false }
+  }, [loadCurrentUser])
+
+  async function submitSetup() {
+    if (submitting) return
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      await saveSetup(buildSetupPayload(state.draft))
+      navigate('/admin', { replace: true })
+    } catch (error) {
+      // 409: a configuração já tinha sido concluída (outro envio ou outra aba); o painel está liberado
+      if (error instanceof ApiError && error.status === 409) { navigate('/admin', { replace: true }); return }
+      setSubmitError(error?.message || 'Tente novamente em instantes.')
+      setSubmitting(false)
+    }
+  }
 
   useEffect(() => {
     if (!errors.length) return
@@ -149,16 +185,16 @@ export default function VerticalSetupWizardExperience() {
   }
 
   const content = [
-    <CondominiumStep condominium={state.draft.condominium} dispatch={dispatch} errors={errors} />,
+    <CondominiumStep condominium={state.draft.condominium} nameLocked={nameLocked} dispatch={dispatch} errors={errors} />,
     <ModelStep />,
     <TowersStep towers={state.draft.towers} dispatch={dispatch} errors={errors} />,
     <UnitsStep towers={state.draft.towers} />,
     <AreasStep draft={state.draft} dispatch={dispatch} />,
-    <SummaryStep draft={state.draft} totalUnits={totalUnits} reviewed={state.reviewed} dispatch={dispatch} onEdit={goTo} />,
+    <SummaryStep draft={state.draft} totalUnits={totalUnits} submitting={submitting} submitError={submitError} onSubmit={submitSetup} onEdit={goTo} />,
   ][state.step]
 
   return <SetupLayout steps={SETUP_STEPS} currentStep={state.step} maxVisited={state.maxVisited} onStepChange={goTo}><section className="setup-page">
-    <div className="setup-page-meta"><span className="setup-draft-badge">Rascunho local</span><p>Suas informações permanecem nesta tela e ainda não serão salvas no banco.</p></div>
+    <div className="setup-page-meta"><span className="setup-draft-badge">Rascunho</span><p>Suas informações ficam nesta tela e só são salvas quando você concluir a configuração no resumo.</p></div>
     <form ref={formRef} className="setup-card" onSubmit={(event) => { event.preventDefault(); if (state.step < SETUP_STEPS.length - 1) goTo(state.step + 1) }} noValidate><header><span>Etapa {state.step + 1} de {SETUP_STEPS.length}</span><h2>{SETUP_STEPS[state.step]}</h2></header>
       {errors.length > 0 && <div className="setup-errors" role="alert" tabIndex="-1"><CircleAlert size={20} /><div><strong>Revise os campos desta etapa:</strong><ul>{errors.map((error) => <li key={`${error.field}-${error.message}`}>{error.message}</li>)}</ul></div></div>}
       <div className="setup-card__body">{content}</div><footer>{state.step > 0 ? <button className="secondary-button" type="button" onClick={() => goTo(state.step - 1)}><ChevronLeft size={18} /> Voltar</button> : <span />}<div className="setup-card-footer-actions">{state.maxVisited === SETUP_STEPS.length - 1 && state.step < SETUP_STEPS.length - 1 && <button className="secondary-button" type="button" onClick={() => goTo(SETUP_STEPS.length - 1)}>Voltar ao resumo</button>}{state.step < SETUP_STEPS.length - 1 && <button className="desktop-primary" type="submit">Continuar <ChevronRight size={18} /></button>}</div></footer></form>
