@@ -81,10 +81,10 @@ test('o serviço envia POST para a rota da configuração e exige 201', async ()
 // Tela: do primeiro passo ao envio
 // ---------------------------------------------------------------------------
 
-function renderWizard({ saveSetup, loadCurrentUser = async () => ({ perfil: 'ADMIN', configuracaoInicial: 'PENDENTE', condominioNome: 'Residencial Teste' }) }) {
+function renderWizard({ saveSetup, reloadSession = async () => {}, loadCurrentUser = async () => ({ perfil: 'ADMIN', configuracaoInicial: 'PENDENTE', condominioNome: 'Residencial Teste' }) }) {
   return render(React.createElement(MemoryRouter, { initialEntries: ['/admin/configuracao-inicial'] },
     React.createElement(Routes, null,
-      React.createElement(Route, { path: '/admin/configuracao-inicial', element: React.createElement(VerticalSetupWizardExperience, { saveSetup, loadCurrentUser }) }),
+      React.createElement(Route, { path: '/admin/configuracao-inicial', element: React.createElement(VerticalSetupWizardExperience, { saveSetup, loadCurrentUser, reloadSession }) }),
       React.createElement(Route, { path: '/admin', element: React.createElement('p', null, 'Painel do administrador') }),
     )))
 }
@@ -159,4 +159,59 @@ test('erro do backend aparece no resumo e permite tentar de novo', async () => {
   assert.equal(deNovo.disabled, false)
   fireEvent.click(deNovo)
   await waitFor(() => assert.equal(tentativas, 2))
+})
+
+// ---------------------------------------------------------------------------
+// Depois de gravar, a sessão é recarregada: ela foi aberta com o condomínio PENDENTE,
+// quando torres e unidades não são carregadas, e o painel abriria vazio até um F5
+// ---------------------------------------------------------------------------
+
+test('recarrega a sessão antes de abrir o painel', async () => {
+  const ordem = []
+  const view = renderWizard({
+    saveSetup: async () => { ordem.push('salvou') },
+    reloadSession: async () => { ordem.push('recarregou') },
+  })
+
+  fireEvent.click(await preencherAteOResumo(view))
+
+  await waitFor(() => assert.ok(view.getByText('Painel do administrador')))
+  assert.deepEqual(ordem, ['salvou', 'recarregou'])
+})
+
+test('no 409 também recarrega a sessão', async () => {
+  let recargas = 0
+  const view = renderWizard({
+    saveSetup: async () => { throw new ApiError(409, 'Já concluída.') },
+    reloadSession: async () => { recargas += 1 },
+  })
+
+  fireEvent.click(await preencherAteOResumo(view))
+
+  await waitFor(() => assert.ok(view.getByText('Painel do administrador')))
+  assert.equal(recargas, 1)
+})
+
+test('erro ao salvar não recarrega a sessão', async () => {
+  let recargas = 0
+  const view = renderWizard({
+    saveSetup: async () => { throw new ApiError(400, 'Dados inválidos.') },
+    reloadSession: async () => { recargas += 1 },
+  })
+
+  fireEvent.click(await preencherAteOResumo(view))
+
+  await waitFor(() => assert.ok(view.getByText('Dados inválidos.')))
+  assert.equal(recargas, 0)
+})
+
+test('falha ao recarregar não prende o admin no wizard', async () => {
+  const view = renderWizard({
+    saveSetup: async () => ({}),
+    reloadSession: async () => { throw new Error('rede caiu') },
+  })
+
+  fireEvent.click(await preencherAteOResumo(view))
+
+  await waitFor(() => assert.ok(view.getByText('Painel do administrador')))
 })

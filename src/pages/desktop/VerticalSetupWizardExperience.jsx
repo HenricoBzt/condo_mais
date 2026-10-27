@@ -14,6 +14,7 @@ import {
   validateStepDetails,
   wizardReducer,
 } from '../../features/setupWizard/verticalSetup'
+import { useOptionalAppData } from '../../context/AppDataContext'
 import { ApiError } from '../../services/api'
 import { carregarSessaoAtual } from '../../services/sessionApi'
 import { salvarConfiguracaoInicial } from '../../services/setupApi'
@@ -129,7 +130,7 @@ function SummaryStep({ draft, totalUnits, submitting, submitError, onSubmit, onE
   </div>
 }
 
-export default function VerticalSetupWizardExperience({ loadCurrentUser = carregarSessaoAtual, saveSetup = salvarConfiguracaoInicial }) {
+export default function VerticalSetupWizardExperience({ loadCurrentUser = carregarSessaoAtual, saveSetup = salvarConfiguracaoInicial, reloadSession }) {
   const [state, dispatch] = useReducer(wizardReducer, undefined, createInitialWizardState)
   const [errors, setErrors] = useState([])
   const [nameLocked, setNameLocked] = useState(false)
@@ -137,6 +138,8 @@ export default function VerticalSetupWizardExperience({ loadCurrentUser = carreg
   const [submitError, setSubmitError] = useState('')
   const formRef = useRef(null)
   const navigate = useNavigate()
+  const appData = useOptionalAppData()
+  const restoreSession = reloadSession || appData?.actions.reloadSession
   const totalUnits = getTotalUnitCount(state.draft.towers)
 
   // O nome vem do cadastro feito pelo MASTER; sem ele (falha na consulta), o campo continua editável
@@ -157,13 +160,18 @@ export default function VerticalSetupWizardExperience({ loadCurrentUser = carreg
     setSubmitError('')
     try {
       await saveSetup(buildSetupPayload(state.draft))
-      navigate('/admin', { replace: true })
     } catch (error) {
       // 409: a configuração já tinha sido concluída (outro envio ou outra aba); o painel está liberado
-      if (error instanceof ApiError && error.status === 409) { navigate('/admin', { replace: true }); return }
-      setSubmitError(error?.message || 'Tente novamente em instantes.')
-      setSubmitting(false)
+      if (!(error instanceof ApiError && error.status === 409)) {
+        setSubmitError(error?.message || 'Tente novamente em instantes.')
+        setSubmitting(false)
+        return
+      }
     }
+    // A sessão foi aberta com o condomínio PENDENTE, quando torres e unidades não são carregadas.
+    // Sem recarregar, o painel abriria com as listas vazias até um F5.
+    try { await restoreSession?.() } catch { /* o painel consulta a sessão de novo ao abrir */ }
+    navigate('/admin', { replace: true })
   }
 
   useEffect(() => {
