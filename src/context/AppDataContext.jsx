@@ -188,6 +188,11 @@ export function AppDataProvider({ children }) {
   return <AppDataContext.Provider value={{ data, actions, remote }}>{children}</AppDataContext.Provider>
 }
 
+// Para quem também é renderizado fora do provider (testes de tela isolada): devolve null em vez de falhar
+export function useOptionalAppData() {
+  return useContext(AppDataContext)
+}
+
 export function useAppData() {
   const value = useContext(AppDataContext)
   if (!value) throw new Error('useAppData precisa estar dentro de AppDataProvider')
