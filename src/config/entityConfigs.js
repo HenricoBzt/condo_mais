@@ -16,8 +16,8 @@ export const entityConfigs = {
   encomendasPortaria: {
     collection: 'packages', title: 'Encomendas', subtitle: 'Registre e acompanhe as encomendas recebidas na portaria.', action: 'Registrar encomenda', empty: 'Nenhuma encomenda encontrada.',
     tabs: [['Todos', []], ['Aguardando retirada', ['AGUARDANDO_RETIRADA']], ['Retiradas', ['RETIRADA']], ['Devolvidas', ['DEVOLVIDA']]],
-    columns: [['Código', 'id'], ['Morador', 'resident'], ['Unidade', 'unit', 'tower'], ['Recebida em', 'receivedAt'], ['Status', 'status']],
-    fields: [{ key: 'tower', label: 'Torre / Bloco', type: 'select', options: towers.slice(0, 3), required: true }, { key: 'unit', label: 'Apartamento', required: true }, { key: 'notes', label: 'Identificação / observação', type: 'textarea' }],
+    columns: [['Código', 'code'], ['Morador', 'resident'], ['Unidade', 'unit', 'tower'], ['Recebida em', 'receivedAt'], ['Status', 'status']],
+    fields: [{ key: 'tower', label: 'Torre / Bloco', type: 'select', options: towers.slice(0, 3), required: true }, { key: 'unit', label: 'Apartamento', required: true }, { key: 'code', label: 'Código / identificação', required: true, placeholder: 'Ex.: código de rastreio ou remetente' }, { key: 'notes', label: 'Observação', type: 'textarea' }],
   },
   avisos: {
     collection: 'notices', title: 'Avisos', subtitle: 'Publique e acompanhe avisos relacionados à rotina do condomínio.', action: 'Novo aviso', empty: 'Nenhum aviso encontrado.',
@@ -50,7 +50,7 @@ export const entityConfigs = {
   encomendasAdmin: {
     collection: 'packages', title: 'Encomendas', subtitle: 'Consulte as encomendas recebidas no condomínio.', empty: 'Nenhuma encomenda encontrada.',
     tabs: [['Todas', []], ['Aguardando retirada', ['AGUARDANDO_RETIRADA']], ['Retiradas', ['RETIRADA']], ['Devolvidas', ['DEVOLVIDA']]],
-    columns: [['Código', 'id'], ['Morador', 'resident'], ['Unidade', 'unit', 'tower'], ['Recebida em', 'receivedAt'], ['Porteiro', 'doorman'], ['Status', 'status']], fields: [],
+    columns: [['Código', 'code'], ['Morador', 'resident'], ['Unidade', 'unit', 'tower'], ['Recebida em', 'receivedAt'], ['Porteiro', 'doorman'], ['Status', 'status']], fields: [],
   },
   reservas: {
     collection: 'reservations', title: 'Reservas', subtitle: 'Consulte e gerencie excepcionalmente as reservas.', empty: 'Nenhuma reserva encontrada.',

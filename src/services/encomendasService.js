@@ -5,7 +5,8 @@ export const encomendasService = {
     return records.filter((item) => matchesQuery(item, query) && (!statuses.length || statuses.includes(item.status)) && (!tower || item.tower === tower) && (!unit || item.unit === unit) && (!doorman || item.doorman === doorman))
   },
   criar(records, payload, resident = 'Morador não identificado') {
-    const record = { ...payload, id: nextId('ENC', records), resident, receivedAt: nowLabel(), doorman: 'João Oliveira', status: 'AGUARDANDO_RETIRADA' }
+    const id = nextId('ENC', records)
+    const record = { ...payload, id, code: String(payload.code || '').trim() || id, resident, receivedAt: nowLabel(), doorman: 'João Oliveira', status: 'AGUARDANDO_RETIRADA' }
     return { records: [record, ...records], record }
   },
   alterarStatus(records, id, status) {

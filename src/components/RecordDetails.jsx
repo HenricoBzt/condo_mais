@@ -7,7 +7,7 @@ const labels = {
   startDate: 'Data de início', startTime: 'Horário de início', endDate: 'Data de término', endTime: 'Horário de término',
   date: 'Data', time: 'Horário', notes: 'Observação', status: 'Status', source: 'Origem',
   entryAt: 'Entrada registrada em', exitAt: 'Saída registrada em', company: 'Empresa', service: 'Serviço',
-  location: 'Local', receivedAt: 'Recebida em', withdrawnAt: 'Retirada em', doorman: 'Porteiro',
+  location: 'Local', receivedAt: 'Recebida em', withdrawnAt: 'Retirada em', doorman: 'Porteiro', code: 'Código / identificação', withdrawnBy: 'Entregue por',
   area: 'Área comum', requestedByOwner: 'Solicitação feita por proprietário', isOwner: 'É proprietário',
   authorized: 'Autorização prévia', title: 'Título', content: 'Conteúdo', priority: 'Prioridade',
   destination: 'Destino', description: 'Descrição', category: 'Categoria', openedAt: 'Aberto em',
@@ -18,7 +18,7 @@ const labels = {
 export const detailFields = {
   visitors: ['id', 'name', 'cpf', 'phone', 'tower', 'unit', 'resident', 'startDate', 'startTime', 'endDate', 'endTime', 'status', 'source', 'entryAt', 'exitAt', 'notes'],
   providers: ['id', 'name', 'cpf', 'company', 'service', 'tower', 'location', 'date', 'time', 'status', 'entryAt', 'exitAt', 'notes'],
-  packages: ['id', 'resident', 'tower', 'unit', 'receivedAt', 'doorman', 'status', 'withdrawnAt', 'notes'],
+  packages: ['code', 'resident', 'tower', 'unit', 'receivedAt', 'doorman', 'status', 'withdrawnAt', 'withdrawnBy', 'notes'],
   reservations: ['id', 'area', 'resident', 'tower', 'unit', 'date', 'startTime', 'endTime', 'status', 'requestedByOwner', 'notes'],
   tickets: ['id', 'title', 'description', 'category', 'location', 'resident', 'tower', 'unit', 'priority', 'status', 'openedAt', 'notes'],
   notices: ['id', 'title', 'content', 'priority', 'destination', 'tower', 'startDate', 'endDate', 'status'],

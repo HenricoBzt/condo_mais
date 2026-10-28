@@ -8,6 +8,7 @@ import { avisosService } from '../services/avisosService'
 import { moradoresService, unidadesService } from '../services/cadastrosService'
 import { chamadosService } from '../services/chamadosService'
 import { encomendasService } from '../services/encomendasService'
+import { carregarEncomendas, registrarEncomenda, registrarRetiradaEncomenda } from '../services/encomendasApi'
 import { prestadoresService } from '../services/prestadoresService'
 import { reservasService } from '../services/reservasService'
 import { nowLabel, todayIso } from '../services/serviceUtils'
@@ -35,8 +36,9 @@ export function AppDataProvider({ children }) {
   const [data, setData] = useState(() => apiEnabled() ? apiInitialData : initialAppData)
   // Coleções que vêm da API (cadastros): status idle (mock) | loading | success | error
   const initialRemote = { status: apiEnabled() ? 'loading' : 'idle', error: '' }
-  const [remote, setRemote] = useState({ units: initialRemote, residents: initialRemote })
+  const [remote, setRemote] = useState({ units: initialRemote, residents: initialRemote, packages: initialRemote })
   const cadastrosRequest = useRef(0)
+  const packagesRequest = useRef(0)
   const sessionRequest = useRef(0)
   const operationalAuthorization = useRef({ allowed: false, token: '', sessionRequest: 0 })
   const dataRef = useRef(data)
@@ -44,6 +46,7 @@ export function AppDataProvider({ children }) {
 
   const actions = useMemo(() => {
     const setCadastrosStatus = (state) => setRemote((current) => ({ ...current, units: state, residents: state }))
+    const setPackagesStatus = (state) => setRemote((current) => ({ ...current, packages: state }))
 
     const authorizationIsCurrent = (authorization) => authorization.allowed
       && authorization.token === getToken()
@@ -66,6 +69,28 @@ export function AppDataProvider({ children }) {
       }
     }
 
+    // Encomendas vêm da API em separado: uma falha aqui não derruba os cadastros
+    async function reloadPackages({ silent = false } = {}) {
+      const authorization = operationalAuthorization.current
+      if (!authorizationIsCurrent(authorization)) return
+      const request = ++packagesRequest.current
+      if (!silent) setPackagesStatus({ status: 'loading', error: '' })
+      try {
+        const packages = await carregarEncomendas()
+        if (request !== packagesRequest.current || !authorizationIsCurrent(authorization)) return
+        setData((current) => ({ ...current, packages }))
+        setPackagesStatus({ status: 'success', error: '' })
+      } catch (error) {
+        if (request !== packagesRequest.current || !authorizationIsCurrent(authorization)) return
+        setPackagesStatus({ status: 'error', error: error.message })
+      }
+    }
+
+    async function packageCommand(run) {
+      await run()
+      await reloadPackages({ silent: true })
+    }
+
     // Comandos na API: lançam ApiError (a tela mantém o formulário aberto) e, se der certo, recarregam
     async function command(run) {
       await run()
@@ -81,20 +106,27 @@ export function AppDataProvider({ children }) {
       const isCurrent = () => request === sessionRequest.current && token === getToken()
       operationalAuthorization.current = { allowed: false, token, sessionRequest: request }
       ++cadastrosRequest.current
+      ++packagesRequest.current
       setData((current) => ({
         ...current,
         currentResident: emptyResident,
         condominium: { ...current.condominium, name: '' },
-        towers: [], units: [], residents: [],
+        towers: [], units: [], residents: [], packages: [],
       }))
       setCadastrosStatus({ status: 'loading', error: '' })
+      setPackagesStatus({ status: 'loading', error: '' })
+      let packagesError = null
       try {
         const result = await loadSessionBeforeOperational({
           loadCurrentUser: carregarUsuarioLogado,
           loadOperationalData: async () => {
             if (!isCurrent()) return null
             operationalAuthorization.current = { allowed: true, token, sessionRequest: request }
-            return carregarCadastros()
+            const [cadastros, packages] = await Promise.all([
+              carregarCadastros(),
+              carregarEncomendas().catch((error) => { packagesError = error; return [] }),
+            ])
+            return { ...cadastros, packages }
           },
           isCurrent,
         })
@@ -115,17 +147,21 @@ export function AppDataProvider({ children }) {
         setCadastrosStatus(result.status === 'operational-error'
           ? { status: 'error', error: result.error.message }
           : { status: 'success', error: '' })
+        const packagesFailure = result.status === 'operational-error' ? result.error : packagesError
+        setPackagesStatus(packagesFailure ? { status: 'error', error: packagesFailure.message } : { status: 'success', error: '' })
         return result
       } catch (error) {
         if (!isCurrent()) throw error
         operationalAuthorization.current = { allowed: false, token, sessionRequest: request }
         setCadastrosStatus({ status: 'error', error: error.message })
+        setPackagesStatus({ status: 'error', error: error.message })
         throw error
       }
     }
 
     return {
     reloadCadastros,
+    reloadPackages,
     reloadSession: restoreSession,
     reloadAll: restoreSession,
     createTower: (name) => command(() => criarTorre(name)),
@@ -133,6 +169,8 @@ export function AppDataProvider({ children }) {
     deleteUnitRemote: (id) => command(() => excluirUnidade(id)),
     saveResidentRemote: (form, editingId) => command(() => salvarMorador(form, editingId, dataRef.current.units)),
     setResidentStatusRemote: (id, status) => command(() => alterarStatusMorador(id, status)),
+    addPackageRemote: (form) => packageCommand(() => registrarEncomenda(form, dataRef.current.units)),
+    withdrawPackageRemote: (id) => packageCommand(() => registrarRetiradaEncomenda(id)),
     addVisitor(payload, source = 'PORTARIA') {
       let created
       setData((current) => {

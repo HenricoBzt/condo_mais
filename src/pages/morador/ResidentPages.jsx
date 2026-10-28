@@ -32,7 +32,7 @@ export function CommunicationsPage() {
   const [selected, setSelected] = useState(null)
   const items = useMemo(() => {
     const notices = activeNotices(data.notices, data.currentResident).map((notice) => ({ id: notice.id, type: 'Aviso', title: notice.title, text: notice.content, time: `${notice.startDate} · ${statusLabel(notice.priority)}`, tone: notice.priority === 'URGENTE' ? 'red' : 'green', icon: Megaphone, link: `/morador/comunicados/${encodeURIComponent(notice.id)}` }))
-    const packages = data.packages.filter((item) => sameUnit(item, data.currentResident) && item.status === 'AGUARDANDO_RETIRADA').map((item) => ({ id: item.id, type: 'Encomenda', title: 'Nova encomenda recebida', text: `${item.id} está aguardando retirada na portaria.`, time: item.receivedAt, tone: 'green', icon: Package }))
+    const packages = data.packages.filter((item) => sameUnit(item, data.currentResident) && item.status === 'AGUARDANDO_RETIRADA').map((item) => ({ id: item.id, type: 'Encomenda', title: 'Nova encomenda recebida', text: `${item.code || item.id} está aguardando retirada na portaria.`, time: item.receivedAt, tone: 'green', icon: Package }))
     return [...packages, ...notices]
   }, [data])
   const visible = items.filter((item) => tab === 'Todos' || item.type === tab.slice(0, -1))

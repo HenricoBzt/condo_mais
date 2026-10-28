@@ -43,7 +43,7 @@ export default function DesktopDashboard({ role }) {
             : data.history.slice(0, 3).map((item) => <Row key={item.id} icon={Contact} title={item.type} subtitle={item.reference} meta={`${item.date} · ${item.time}`} />)}
             {(portaria ? !todaysVisitors.length : !data.history.length) && <p className="dashboard-empty">Nenhuma atividade encontrada.</p>}</article>
           <article className="panel"><h2>{portaria ? 'Encomendas aguardando retirada' : 'Próximas reservas'}</h2>{portaria
-            ? data.packages.filter((item) => item.status === 'AGUARDANDO_RETIRADA').slice(0, 3).map((item) => <Row key={item.id} icon={Archive} title={item.id} subtitle={`${item.resident}, ${item.unit} · ${item.tower}`} meta={item.receivedAt} status={item.status} badge={statusLabel(item.status)} tone="pink" />)
+            ? data.packages.filter((item) => item.status === 'AGUARDANDO_RETIRADA').slice(0, 3).map((item) => <Row key={item.id} icon={Archive} title={item.code || item.id} subtitle={[item.resident, [item.unit, item.tower].filter(Boolean).join(' · ')].filter(Boolean).join(', ')} meta={item.receivedAt} status={item.status} badge={statusLabel(item.status)} tone="pink" />)
             : upcoming.slice(0, 3).map((item) => <Row key={item.id} icon={CalendarCheck} title={item.area} subtitle={`${item.resident} · ${item.unit} · ${item.tower}`} meta={`${item.date} · ${item.startTime}`} status={item.status} badge={statusLabel(item.status)} />)}
             {(portaria ? !pendingPackages : !upcoming.length) && <p className="dashboard-empty">{portaria ? 'Nenhuma encomenda aguardando retirada.' : 'Nenhuma reserva futura.'}</p>}</article>
           <article className="panel"><h2>{portaria ? 'Prestadores presentes' : 'Chamados em aberto'}</h2>{portaria

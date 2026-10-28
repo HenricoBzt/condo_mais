@@ -33,8 +33,9 @@ export function statusLabel(value = '') {
 }
 
 // Os mocks operacionais usam torre + número; ainda não referenciam units.id.
+// Mesma torre e mesmo número; unidade sem torre (edifício) compara só o número
 export function sameUnit(record, resident) {
-  return Boolean(record.tower && resident.tower && record.unit && resident.unit) && record.tower === resident.tower && String(record.unit) === String(resident.unit)
+  return Boolean(record.unit && resident.unit) && (record.tower || '') === (resident.tower || '') && String(record.unit) === String(resident.unit)
 }
 
 export function futureReservations(records, now = new Date()) {
