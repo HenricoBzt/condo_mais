@@ -11,7 +11,7 @@ const labels = {
   area: 'Área comum', requestedByOwner: 'Solicitação feita por proprietário', isOwner: 'É proprietário',
   authorized: 'Autorização prévia', title: 'Título', content: 'Conteúdo', priority: 'Prioridade',
   destination: 'Destino', description: 'Descrição', category: 'Categoria', openedAt: 'Aberto em',
-  type: 'Operação', reference: 'Referência', user: 'Registrado por', timestamp: 'Data e hora do evento', author: 'Publicado por', approvedBy: 'Aprovada / recusada por', doormanIn: 'Entrada registrada por', bookable: 'Moradores podem reservar', requiresApproval: 'Exige aprovação', capacity: 'Capacidade (pessoas)', rules: 'Regras de uso', doormanOut: 'Saída registrada por',
+  type: 'Operação', reference: 'Referência', user: 'Registrado por', timestamp: 'Data e hora do evento', author: 'Publicado por', approvedBy: 'Aprovada / recusada por', doormanIn: 'Entrada registrada por', bookable: 'Moradores podem reservar', requiresApproval: 'Exige aprovação', capacity: 'Capacidade (pessoas)', rules: 'Regras de uso', doormanOut: 'Saída registrada por', role: 'Perfil', pendingFirstAccess: 'Primeiro acesso pendente',
 }
 
 // Allowlist de apresentação dos mocks atuais, não um DTO definitivo.
@@ -23,6 +23,7 @@ export const detailFields = {
   tickets: ['id', 'code', 'title', 'description', 'category', 'location', 'resident', 'priority', 'status', 'openedAt', 'closedAt', 'provider', 'providerContact', 'forecast', 'notes'],
   notices: ['id', 'title', 'content', 'priority', 'destination', 'tower', 'startDate', 'endDate', 'author', 'status'],
   residents: ['id', 'name', 'cpf', 'email', 'phone', 'tower', 'unit', 'relation', 'isOwner', 'status'],
+  staff: ['name', 'cpf', 'role', 'email', 'phone', 'status', 'pendingFirstAccess'],
   units: ['id', 'number', 'tower', 'status', 'owners', 'residents'],
   areas: ['id', 'name', 'description', 'rules', 'bookable', 'requiresApproval', 'capacity', 'status'],
   history: ['id', 'timestamp', 'date', 'time', 'type', 'reference', 'unit', 'user'],
@@ -33,7 +34,7 @@ const scalar = (value) => ['string', 'number'].includes(typeof value) ? String(v
 function displayValue(key, value) {
   if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
   if (Array.isArray(value)) return value.map(scalar).filter(Boolean).join(', ') || 'Nenhum vínculo'
-  if (['status', 'priority', 'relation', 'source'].includes(key)) return statusLabel(scalar(value)) || '—'
+  if (['status', 'priority', 'relation', 'source', 'role'].includes(key)) return statusLabel(scalar(value)) || '—'
   return scalar(value) || '—'
 }
 

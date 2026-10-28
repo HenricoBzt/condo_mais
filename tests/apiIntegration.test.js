@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { ApiError, apiGet, condominioIdFromToken, getToken, setToken, tokenClaims } from '../src/services/api.js'
 import { subscribeToSessionChanges } from '../src/services/sessionEvents.js'
 import { createTestServer } from './viteTestServer.js'
-import { alterarStatusMorador, carregarCadastros, carregarUsuarioLogado, criarTorre, excluirUnidade, linkResidents, salvarMorador, salvarUnidade, toResident, toUnit } from '../src/services/cadastrosApi.js'
+import { alterarStatusMorador, carregarCadastros, carregarUsuarioLogado, criarTorre, excluirUnidade, linkResidents, salvarMorador, salvarUnidade, salvarUsuarioEquipe, staffRole, toResident, toStaff, toUnit } from '../src/services/cadastrosApi.js'
 
 // sessionStorage mínimo para o Node; cada teste define o próprio token.
 const storage = new Map()
@@ -168,6 +168,34 @@ test('comandos de morador resolvem a unidade e usam /usuarios', async () => {
   await assert.rejects(salvarMorador({ ...form, unit: '999' }, undefined, units, { fetchImpl }), (error) => error.status === 400 && /unidade existente/.test(error.message))
 })
 
+test('usuários de portaria e administração viram a equipe; perfis legados contam igual', async () => {
+  setToken(fakeJwt({ condominio_id: 'c-1' }))
+  const porteiro = { id: 'p-1', nome: 'José', cpf: '111.444.777-35', email: null, telefone: null, perfil: 'PORTARIA', status: 'ATIVO', primeiroAcessoPendente: true }
+  const { fetchImpl } = fakeFetch([
+    ['/condominios/torres', 200, []],
+    ['/condominios/apartamentos', 200, []],
+    ['/usuarios', 200, [usuarioMorador, porteiro, { ...porteiro, id: 'p-2', perfil: 'Porteiro' }, { ...porteiro, id: 'adm', perfil: 'Administrador', status: 'INATIVO', primeiroAcessoPendente: false }]],
+  ])
+  const { residents, staff } = await carregarCadastros({ fetchImpl })
+  assert.deepEqual(residents.map((resident) => resident.id), ['u-1'])
+  assert.deepEqual(staff.map((member) => [member.id, member.role, member.status]), [['p-1', 'PORTARIA', 'ATIVO'], ['p-2', 'PORTARIA', 'ATIVO'], ['adm', 'ADMIN', 'INATIVO']])
+  assert.deepEqual(toStaff(porteiro), { id: 'p-1', name: 'José', cpf: '111.444.777-35', email: '', phone: '', role: 'PORTARIA', status: 'ATIVO', pendingFirstAccess: true })
+  assert.equal(staffRole('MORADOR'), '')
+})
+
+test('cadastro da equipe manda o perfil sem unidade nem vínculo', async () => {
+  setToken(fakeJwt({ condominio_id: 'c-1' }))
+  const { fetchImpl, calls } = fakeFetch([['/usuarios', 200, {}]])
+  const form = { name: ' José ', cpf: '111.444.777-35', role: 'PORTARIA', email: '', phone: ' 81999990000 ' }
+  await salvarUsuarioEquipe(form, undefined, { fetchImpl })
+  await salvarUsuarioEquipe({ ...form, role: 'ADMIN' }, 'p-1', { fetchImpl })
+  assert.deepEqual(calls.map((call) => [call.init.method, call.url.replace(/^.*(\/usuarios)/, '$1')]), [['POST', '/usuarios'], ['PUT', '/usuarios/p-1']])
+  assert.deepEqual(JSON.parse(calls[0].init.body), { nome: 'José', cpf: '111.444.777-35', email: '', telefone: '81999990000', perfil: 'PORTARIA' })
+  assert.equal(JSON.parse(calls[1].init.body).perfil, 'ADMIN')
+  await assert.rejects(salvarUsuarioEquipe({ ...form, role: 'MORADOR' }, undefined, { fetchImpl }), (error) => error.status === 400 && /perfil/.test(error.message))
+  assert.equal(calls.length, 2)
+})
+
 test('resposta 200 sem corpo (ex.: DELETE) não quebra', async () => {
   setToken(fakeJwt({ condominio_id: 'c-1' }))
   const fetchImpl = async () => ({ ok: true, status: 200, text: async () => '', json: async () => { throw new SyntaxError('empty') } })
@@ -194,13 +222,13 @@ test('com a API ligada, o estado inicial não traz dados de demonstração', asy
   try {
     const { apiInitialData } = await server.ssrLoadModule('/src/context/AppDataContext.jsx')
     const { initialAppData } = await server.ssrLoadModule('/src/mocks/appData.js')
-    for (const key of ['towers', 'units', 'residents', 'visitors', 'providers', 'packages', 'reservations', 'notices', 'tickets', 'history', 'notifications']) {
+    for (const key of ['towers', 'units', 'residents', 'staff', 'visitors', 'providers', 'packages', 'reservations', 'notices', 'tickets', 'history', 'notifications']) {
       assert.deepEqual(apiInitialData[key], [], key)
     }
     assert.equal(apiInitialData.currentResident.name, '')
     assert.equal(apiInitialData.condominium.name, '')
     const serialized = JSON.stringify(apiInitialData)
-    for (const resident of initialAppData.residents) assert.ok(!serialized.includes(resident.name), resident.name)
+    for (const person of [...initialAppData.residents, ...initialAppData.staff]) assert.ok(!serialized.includes(person.name), person.name)
     assert.ok(!serialized.includes(initialAppData.condominium.name))
   } finally { await server.close() }
 })

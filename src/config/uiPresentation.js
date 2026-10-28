@@ -17,7 +17,7 @@ export function emptyMessage(collection, filtered = false) {
     visitors: ['Nenhum visitante', 'cadastrado'], providers: ['Nenhum prestador', 'cadastrado'],
     packages: ['Nenhuma encomenda', 'registrada'], reservations: ['Nenhuma reserva', 'registrada'],
     notices: ['Nenhum comunicado', 'disponível'], tickets: ['Nenhum chamado', 'registrado'],
-    residents: ['Nenhum morador', 'cadastrado'], units: ['Nenhuma unidade', 'cadastrada'], areas: ['Nenhuma área comum', 'cadastrada'],
+    residents: ['Nenhum morador', 'cadastrado'], staff: ['Nenhum usuário da equipe', 'cadastrado'], units: ['Nenhuma unidade', 'cadastrada'], areas: ['Nenhuma área comum', 'cadastrada'],
     history: ['Nenhuma operação', 'registrada'], approvals: ['Nenhuma solicitação de aprovação', 'disponível'],
   }
   const [name, ending] = names[collection] || ['Nenhum registro', 'disponível']
