@@ -11,6 +11,7 @@ import { encomendasService } from '../services/encomendasService'
 import { carregarEncomendas, registrarEncomenda, registrarRetiradaEncomenda } from '../services/encomendasApi'
 import { carregarComunicados, excluirComunicado, salvarComunicado } from '../services/comunicadosApi'
 import { alterarStatusReserva, carregarAreasComuns, carregarReservas, solicitarReserva } from '../services/reservasApi'
+import { abrirChamado, atualizarChamado, carregarCategoriasChamado, carregarChamado, carregarChamados, comentarChamado } from '../services/chamadosApi'
 import { prestadoresService } from '../services/prestadoresService'
 import { reservasService } from '../services/reservasService'
 import { nowLabel, todayIso } from '../services/serviceUtils'
@@ -20,7 +21,7 @@ const AppDataContext = createContext(null)
 
 // Módulos operacionais já ligados à API: cada coleção carrega em separado, e a falha de uma
 // não derruba as outras nem os cadastros
-const operationalLoaders = { packages: carregarEncomendas, notices: carregarComunicados, reservations: carregarReservas, areas: carregarAreasComuns }
+const operationalLoaders = { packages: carregarEncomendas, notices: carregarComunicados, reservations: carregarReservas, areas: carregarAreasComuns, tickets: carregarChamados, ticketCategories: carregarCategoriasChamado }
 const operationalKeys = Object.keys(operationalLoaders)
 
 function historyEntry(type, reference, unit, user = 'João Oliveira') {
@@ -36,7 +37,7 @@ export const apiInitialData = {
   currentResident: emptyResident,
   condominium: { ...initialAppData.condominium, name: '' },
   towers: [], units: [], residents: [],
-  visitors: [], providers: [], packages: [], reservations: [], notices: [], tickets: [], history: [], notifications: [], areas: [],
+  visitors: [], providers: [], packages: [], reservations: [], notices: [], tickets: [], history: [], notifications: [], areas: [], ticketCategories: [],
 }
 
 export function AppDataProvider({ children }) {
@@ -185,6 +186,11 @@ export function AppDataProvider({ children }) {
     deleteNoticeRemote: (id) => collectionCommand('notices', () => excluirComunicado(id)),
     addReservationRemote: (form) => collectionCommand('reservations', () => solicitarReserva(form, dataRef.current.areas)),
     setReservationStatusRemote: (id, status) => collectionCommand('reservations', () => alterarStatusReserva(id, status)),
+    openTicketRemote: (form) => collectionCommand('tickets', () => abrirChamado(form, { units: dataRef.current.units, categories: dataRef.current.ticketCategories })),
+    updateTicketRemote: (id, patch) => collectionCommand('tickets', () => atualizarChamado(id, patch)),
+    commentTicketRemote: (id, comment) => collectionCommand('tickets', () => comentarChamado(id, comment)),
+    // Detalhe com histórico: não altera a lista, só devolve o chamado completo para o modal
+    loadTicketDetail: (id) => carregarChamado(id),
     addVisitor(payload, source = 'PORTARIA') {
       let created
       setData((current) => {

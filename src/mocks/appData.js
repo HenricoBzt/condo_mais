@@ -50,10 +50,10 @@ export const initialAppData = {
     { id: 'AVI-403', title: 'Interdição temporária da garagem', content: 'Acesso restrito para manutenção.', priority: 'URGENTE', destination: 'Torre/Bloco específico', tower: 'Torre A', startDate: '2026-09-03', endDate: '2026-09-04', status: 'ENCERRADO' },
   ],
   tickets: [
-    { id: '#CH-0028', title: 'Vazamento na garagem', description: 'Vazamento próximo à vaga 203.', category: 'Manutenção', location: 'Garagem', priority: 'ALTA', notes: '', resident: 'Carlos Silva', tower: 'Torre A', unit: '203', openedAt: 'Hoje · 09:42', status: 'EM_ANALISE', comments: [] },
-    { id: '#CH-0027', title: 'Barulho excessivo durante a madrugada', description: 'Ocorrência de barulho recorrente.', category: 'Convivência', location: 'Torre B', priority: 'NORMAL', notes: '', resident: 'Ana Souza', tower: 'Torre B', unit: '305', openedAt: 'Hoje · 08:15', status: 'ABERTO', comments: [] },
-    { id: '#CH-0024', title: 'Lâmpada queimada no corredor', description: 'Corredor do terceiro andar.', category: 'Manutenção', location: 'Torre A', priority: 'BAIXA', notes: '', resident: 'João Santos', tower: 'Torre A', unit: '108', openedAt: '30/08 · 18:15', status: 'EM_ATENDIMENTO', comments: [] },
-    { id: '#CH-0018', title: 'Iluminação da garagem', description: 'Revisão concluída.', category: 'Manutenção', location: 'Garagem', priority: 'BAIXA', notes: '', resident: 'Ricardo Lima', tower: 'Torre B', unit: '207', openedAt: '27/08 · 10:20', status: 'RESOLVIDO', comments: [] },
+    { id: '#CH-0028', code: '#CH-0028', title: 'Vazamento na garagem', description: 'Vazamento próximo à vaga 203.', category: 'Manutenção', location: 'Garagem', priority: 'ALTA', notes: '', resident: 'Carlos Silva', tower: 'Torre A', unit: '203', openedAt: 'Hoje · 09:42', status: 'EM_ANALISE', comments: [] },
+    { id: '#CH-0027', code: '#CH-0027', title: 'Barulho excessivo durante a madrugada', description: 'Ocorrência de barulho recorrente.', category: 'Convivência', location: 'Torre B', priority: 'NORMAL', notes: '', resident: 'Ana Souza', tower: 'Torre B', unit: '305', openedAt: 'Hoje · 08:15', status: 'ABERTO', comments: [] },
+    { id: '#CH-0024', code: '#CH-0024', title: 'Lâmpada queimada no corredor', description: 'Corredor do terceiro andar.', category: 'Manutenção', location: 'Torre A', priority: 'BAIXA', notes: '', resident: 'João Santos', tower: 'Torre A', unit: '108', openedAt: '30/08 · 18:15', status: 'EM_ATENDIMENTO', comments: [] },
+    { id: '#CH-0018', code: '#CH-0018', title: 'Iluminação da garagem', description: 'Revisão concluída.', category: 'Manutenção', location: 'Garagem', priority: 'BAIXA', notes: '', resident: 'Ricardo Lima', tower: 'Torre B', unit: '207', openedAt: '27/08 · 10:20', status: 'RESOLVIDO', comments: [] },
   ],
   history: [
     { id: 'HIS-1', date: '2026-09-08', time: '14:32', type: 'Encomenda registrada', reference: 'ENC-1048 · Carlos Silva', unit: '203 · Torre A', user: 'João Oliveira' },

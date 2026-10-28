@@ -18,6 +18,7 @@ import { reservasService } from '../../services/reservasService'
 import { basicValidation, noticePeriodError, unitDuplicate, unitEditPatch, matchesQuery, statusLabel, todayIso } from '../../services/serviceUtils'
 import { visitantesService, visitorEntryError } from '../../services/visitantesService'
 import { findPackageUnit } from '../../services/encomendasApi'
+import { TICKET_COMMON_AREA, ticketUnitLabel } from '../../services/chamadosApi'
 
 import { confirmationMessage, emptyMessage } from '../../config/uiPresentation'
 import { towers, priorities } from '../../config/catalogs'
@@ -80,6 +81,8 @@ function EntityModule({ role, type }) {
   const remotePackages = remoteMode && config.collection === 'packages'
   const remoteNotices = remoteMode && config.collection === 'notices'
   const remoteReservations = remoteMode && config.collection === 'reservations'
+  const remoteTickets = remoteMode && config.collection === 'tickets'
+  const ticketCategoryNames = (data.ticketCategories || []).map((category) => category.name)
   // Opções de torre vêm do banco; vínculos da unidade são geridos pelo cadastro de moradores.
   // Encomenda: a unidade é escolhida entre as da torre selecionada; condomínio sem torres não pede torre.
   const packageUnitOptions = remotePackages
@@ -91,7 +94,11 @@ function EntityModule({ role, type }) {
       .filter((field) => !(remotePackages && field.key === 'tower' && !towerNames.length))
       // Comunicado: publicado na hora (sem data inicial); sem torres, vai sempre para o condomínio todo
       .filter((field) => !(remoteNotices && (field.key === 'startDate' || (!towerNames.length && ['destination', 'tower'].includes(field.key)))))
+      // Chamado: o backend não guarda observação; o local é uma unidade ou a área comum
+      .filter((field) => !(remoteTickets && field.key === 'notes'))
       .map((field) => {
+        if (remoteTickets && field.key === 'category') return { ...field, label: 'Categoria (sem escolha, vai para Outros)', required: false, options: ticketCategoryNames }
+        if (remoteTickets && field.key === 'location') return { ...field, label: 'Local / unidade', type: 'select', options: [TICKET_COMMON_AREA, ...(data.units || []).map(ticketUnitLabel)] }
         if (remoteNotices && field.key === 'endDate') return { ...field, label: 'Válido até', required: false }
         if (field.key === 'tower') return { ...field, options: towerNames }
         if (remotePackages && field.key === 'unit') return { ...field, type: 'select', options: packageUnitOptions }
@@ -126,6 +133,13 @@ function EntityModule({ role, type }) {
   }
 
   async function saveRecord() {
+    if (remoteTickets) {
+      const validation = validate(fields, form)
+      if (validation) { setError(validation); return }
+      const ok = await runRemote(() => actions.openTicketRemote(form), setError)
+      if (ok) { setOpen(false); flash('Chamado aberto.') }
+      return
+    }
     if (remoteNotices) {
       const validation = validate(fields, form) || (form.endDate && form.endDate < todayIso() ? 'A data final não pode estar no passado.' : '')
       if (validation) { setError(validation); return }
@@ -170,6 +184,14 @@ function EntityModule({ role, type }) {
   function requestAction(action, record, label, status) { setPendingAction({ action, record, label, status }) }
   async function confirmAction() {
     const { action, record, status } = pendingAction
+    if (remoteTickets && action === 'ticket') {
+      const ok = await runRemote(() => actions.updateTicketRemote(record.id, { status }), (message) => { setPendingAction(null); flash(message) })
+      if (!ok) return
+      setPendingAction(null)
+      refreshTicket(record.id)
+      flash('Status atualizado.')
+      return
+    }
     if (remoteReservations && action === 'reservation') {
       const ok = await runRemote(() => actions.setReservationStatusRemote(record.id, status), (message) => { setPendingAction(null); flash(message) })
       if (!ok) return
@@ -217,6 +239,25 @@ function EntityModule({ role, type }) {
     setDetails((current) => current ? { ...current, status } : current); setPendingAction(null); flash('Status atualizado com sucesso.')
   }
 
+  // Chamado da API: o modal busca o detalhe com o histórico
+  function openDetails(row) {
+    setDetails(row)
+    if (remoteTickets) refreshTicket(row.id)
+  }
+  function refreshTicket(id) {
+    actions.loadTicketDetail(id).then((full) => setDetails((current) => current?.id === id ? full : current), () => {})
+  }
+  async function recategorize(record, categoryName) {
+    const category = (data.ticketCategories || []).find((item) => item.name === categoryName)
+    if (!category || category.id === record.categoryId) return
+    const ok = await runRemote(() => actions.updateTicketRemote(record.id, { categoryId: category.id }), flash)
+    if (ok) { refreshTicket(record.id); flash('Categoria alterada.') }
+  }
+  async function addRemoteComment() {
+    const ok = await runRemote(() => actions.commentTicketRemote(details.id, comment), flash)
+    if (ok) { setComment(''); refreshTicket(details.id); flash('Comentário adicionado.') }
+  }
+
   function detailActions(record) {
     if (config.collection === 'visitors') {
       const buttons = record.status === 'PENDENTE' ? [['Autorizar', 'AUTORIZADO'], ['Recusar', 'RECUSADO']] : record.status === 'AUTORIZADO' ? [['Registrar entrada', 'ENTROU']] : record.status === 'ENTROU' ? [['Registrar saída', 'SAIU']] : []
@@ -235,6 +276,10 @@ function EntityModule({ role, type }) {
     if (config.collection === 'residents') return <><button className="secondary-button" onClick={() => startEdit(record)}>Editar</button><button className={record.status === 'ATIVO' ? 'danger-button' : 'primary-button'} onClick={() => requestAction('resident', record, record.status === 'ATIVO' ? 'Desativar morador' : 'Ativar morador', record.status === 'ATIVO' ? 'INATIVO' : 'ATIVO')}>{record.status === 'ATIVO' ? 'Desativar' : 'Ativar'}</button></>
     if (config.collection === 'units' && remoteMode) return <><button className="secondary-button" onClick={() => startEdit(record)}>Editar</button><button className="danger-button" onClick={() => requestAction('unitDelete', record, 'Excluir unidade', 'EXCLUIDA')}>Excluir</button></>
     if (config.collection === 'units') return <button className="secondary-button" onClick={() => startEdit(record)}>Editar e gerenciar vínculos</button>
+    // Na API só a administração muda status e categoria; ENCERRADO é final
+    if (remoteTickets) return role === 'admin' && record.status !== 'ENCERRADO'
+      ? <div className="ticket-actions"><select aria-label="Categoria do chamado" value={record.category} disabled={busy} onChange={(event) => recategorize(record, event.target.value)}>{[...new Set([record.category, ...ticketCategoryNames])].filter(Boolean).map((name) => <option key={name}>{name}</option>)}</select>{['EM_ANALISE', 'EM_ATENDIMENTO', 'RESOLVIDO', 'ENCERRADO'].filter((status) => status !== record.status).map((status) => <button className="secondary-button" key={status} onClick={() => requestAction('ticket', record, `Alterar para ${statusLabel(status)}`, status)}>{statusLabel(status)}</button>)}</div>
+      : null
     if (config.collection === 'tickets') return <div className="ticket-actions"><select aria-label="Prioridade do chamado" value={record.priority} onChange={(event) => { actions.updateTicket(record.id, { priority: event.target.value }); setDetails({ ...record, priority: event.target.value }); flash('Prioridade atualizada.') }}><option>BAIXA</option><option>NORMAL</option><option>ALTA</option><option>URGENTE</option></select>{['EM_ANALISE', 'EM_ATENDIMENTO', 'RESOLVIDO', 'ENCERRADO'].filter((status) => status !== record.status).map((status) => <button className="secondary-button" key={status} onClick={() => requestAction('ticket', record, `Alterar para ${statusLabel(status)}`, status)}>{statusLabel(status)}</button>)}</div>
     return null
   }
@@ -258,11 +303,11 @@ function EntityModule({ role, type }) {
         {config.history && <><label>Data<input type="date" value={filters.date} onChange={(event) => setFilter('date', event.target.value)} /></label><label>Operação<select value={filters.operation} onChange={(event) => setFilter('operation', event.target.value)}><option value="">Todas</option>{[...new Set(records.map((item) => item.type))].map((item) => <option key={item}>{item}</option>)}</select></label><label>Unidade<input value={filters.unit} onChange={(event) => setFilter('unit', event.target.value)} /></label><label>Usuário<select value={filters.user} onChange={(event) => setFilter('user', event.target.value)}><option value="">Todos</option>{[...new Set(records.map((item) => item.user))].map((item) => <option key={item}>{item}</option>)}</select></label></>}
         {hasFilters && <button className="clear-filters" onClick={resetFilters}>Limpar filtros</button>}
       </div>
-      <div className="table-wrap"><table><thead><tr>{config.columns.map(([label, key]) => <th className={key === 'status' ? 'status-column' : undefined} key={label}>{label}</th>)}<th className="action-column">Ações</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}>{config.columns.map(([label, key, secondKey], columnIndex) => { const value = cellValue(row, key, secondKey); const badge = key === 'status' || key === 'priority'; return <td className={key === 'status' ? 'status-column' : columnIndex === 0 ? 'identity-column' : undefined} key={label}>{badge ? <StatusBadge status={value.first}>{statusLabel(value.first)}</StatusBadge> : <span className="cell-stack"><strong>{value.first}</strong>{value.second && <small>{value.second}</small>}{columnIndex === 0 && row.status && <span className="compact-row-status"><StatusBadge status={row.status}>{statusLabel(row.status)}</StatusBadge></span>}</span>}</td>})}<td className="action-column"><button className="row-action" onClick={() => setDetails(row)}>Ver detalhes</button></td></tr>)}</tbody></table>{remoteState?.status === 'loading' ? <div className="empty-state" role="status"><strong>Carregando registros...</strong></div> : remoteState?.status === 'error' ? <div className="empty-state" role="alert"><strong>{remoteState.error}</strong><button className="text-link" onClick={() => (['units', 'residents'].includes(config.collection) ? actions.reloadCadastros() : actions.reloadCollection(config.collection))}>Tentar novamente</button></div> : rows.length === 0 && <EmptyState title={emptyMessage(config.collection, Boolean(records.length && hasFilters))} onClear={records.length && hasFilters ? resetFilters : undefined} />}</div>
+      <div className="table-wrap"><table><thead><tr>{config.columns.map(([label, key]) => <th className={key === 'status' ? 'status-column' : undefined} key={label}>{label}</th>)}<th className="action-column">Ações</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}>{config.columns.map(([label, key, secondKey], columnIndex) => { const value = cellValue(row, key, secondKey); const badge = key === 'status' || key === 'priority'; return <td className={key === 'status' ? 'status-column' : columnIndex === 0 ? 'identity-column' : undefined} key={label}>{badge ? <StatusBadge status={value.first}>{statusLabel(value.first)}</StatusBadge> : <span className="cell-stack"><strong>{value.first}</strong>{value.second && <small>{value.second}</small>}{columnIndex === 0 && row.status && <span className="compact-row-status"><StatusBadge status={row.status}>{statusLabel(row.status)}</StatusBadge></span>}</span>}</td>})}<td className="action-column"><button className="row-action" onClick={() => openDetails(row)}>Ver detalhes</button></td></tr>)}</tbody></table>{remoteState?.status === 'loading' ? <div className="empty-state" role="status"><strong>Carregando registros...</strong></div> : remoteState?.status === 'error' ? <div className="empty-state" role="alert"><strong>{remoteState.error}</strong><button className="text-link" onClick={() => (['units', 'residents'].includes(config.collection) ? actions.reloadCadastros() : actions.reloadCollection(config.collection))}>Tentar novamente</button></div> : rows.length === 0 && <EmptyState title={emptyMessage(config.collection, Boolean(records.length && hasFilters))} onClear={records.length && hasFilters ? resetFilters : undefined} />}</div>
       <div className="pagination"><span>Mostrando {rows.length} de {records.length} registros</span></div>
     </section>
     <Modal open={open} title={editing ? `Editar ${config.title.toLowerCase()}` : config.action || 'Novo registro'} onClose={() => setOpen(false)} onConfirm={saveRecord} confirmLabel={busy ? 'Salvando...' : editing ? 'Salvar alterações' : (type.includes('encomendas') ? 'Registrar' : 'Salvar')}><DynamicForm fields={fields} values={form} onChange={(key, value) => { setForm((current) => ({ ...current, [key]: value, ...(remotePackages && key === 'tower' ? { unit: '' } : {}) })); setError('') }} error={error} /></Modal>
-    <Modal open={Boolean(details)} title={details ? `Detalhes · ${details.code || (isUuid(details.id) ? details.title || details.name || '' : details.id)}` : 'Detalhes'} onClose={() => setDetails(null)} ><RecordDetails record={details} collection={config.collection} />{details && <div className="detail-actions">{detailActions(details)}</div>}{details && config.collection === 'tickets' && <div className="comment-box"><label>Adicionar comentário<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Descreva a atualização" /></label><button className="secondary-button" disabled={!comment.trim()} onClick={() => { actions.updateTicket(details.id, { comments: [...(details.comments || []), comment] }); setDetails({ ...details, comments: [...(details.comments || []), comment] }); setComment(''); flash('Comentário adicionado.') }}>Adicionar comentário</button></div>}</Modal>
+    <Modal open={Boolean(details)} title={details ? `Detalhes · ${details.code || (isUuid(details.id) ? details.title || details.name || '' : details.id)}` : 'Detalhes'} onClose={() => setDetails(null)} ><RecordDetails record={details} collection={config.collection} />{details && <div className="detail-actions">{detailActions(details)}</div>}{details && config.collection === 'tickets' && !(remoteTickets && details.status === 'ENCERRADO') && <div className="comment-box"><label>Adicionar comentário<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Descreva a atualização" /></label><button className="secondary-button" disabled={!comment.trim() || busy} onClick={() => { if (remoteTickets) { addRemoteComment(); return } actions.updateTicket(details.id, { comments: [...(details.comments || []), comment] }); setDetails({ ...details, comments: [...(details.comments || []), comment] }); setComment(''); flash('Comentário adicionado.') }}>Adicionar comentário</button></div>}</Modal>
     <ConfirmDialog open={Boolean(pendingAction)} title={pendingAction?.label} message={confirmationMessage(pendingAction?.record, pendingAction?.label, pendingAction?.status)} destructive={['RECUSADO', 'CANCELADA', 'ENCERRADO', 'INATIVO', 'EXCLUIDA', 'EXCLUIDO'].includes(pendingAction?.status)} confirmLabel={busy ? 'Aguarde...' : pendingAction?.label || 'Confirmar'} onCancel={() => setPendingAction(null)} onConfirm={confirmAction} />
     <Modal open={Boolean(towerForm)} title="Nova torre" onClose={() => setTowerForm(null)} onConfirm={async () => { const ok = await runRemote(() => actions.createTower(towerForm.name), setError); if (ok) { setTowerForm(null); flash('Torre cadastrada.') } }} confirmLabel={busy ? 'Salvando...' : 'Salvar'}><DynamicForm fields={[{ key: 'name', label: 'Nome da torre / bloco', required: true }]} values={towerForm || {}} onChange={(key, value) => { setTowerForm((current) => ({ ...current, [key]: value })); setError('') }} error={towerForm ? error : ''} columns={false} /></Modal>
     <div role="status" aria-live="polite" aria-atomic="true">{saved && <div className="toast">{saved}</div>}</div>

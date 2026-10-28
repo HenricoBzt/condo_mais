@@ -28,7 +28,7 @@ export const entityConfigs = {
   chamadosPortaria: {
     collection: 'tickets', title: 'Chamados', subtitle: 'Registre ocorrências e acompanhe as solicitações da portaria.', action: 'Novo chamado', empty: 'Nenhum chamado encontrado.',
     tabs: [['Todos', []], ['Abertos', ['ABERTO']], ['Em análise', ['EM_ANALISE']], ['Em atendimento', ['EM_ATENDIMENTO']], ['Resolvidos', ['RESOLVIDO']], ['Encerrados', ['ENCERRADO']]],
-    columns: [['Protocolo', 'id'], ['Chamado / Ocorrência', 'title', 'category'], ['Local / Unidade', 'location'], ['Prioridade', 'priority'], ['Status', 'status']],
+    columns: [['Protocolo', 'code'], ['Chamado / Ocorrência', 'title', 'category'], ['Local / Unidade', 'location'], ['Prioridade', 'priority'], ['Status', 'status']],
     fields: [{ key: 'title', label: 'Título', required: true }, { key: 'description', label: 'Descrição', type: 'textarea', required: true }, { key: 'category', label: 'Categoria', type: 'select', options: ['Manutenção', 'Convivência', 'Segurança', 'Ocorrência'], required: true }, { key: 'location', label: 'Local', required: true }, { key: 'priority', label: 'Prioridade', type: 'select', options: priorities, required: true }, { key: 'notes', label: 'Observação', type: 'textarea' }],
   },
   historico: {
@@ -71,7 +71,7 @@ export const entityConfigs = {
   chamadosAdmin: {
     collection: 'tickets', title: 'Chamados', subtitle: 'Gerencie e acompanhe as solicitações dos moradores.', action: 'Novo chamado', empty: 'Nenhum chamado encontrado.',
     tabs: [['Todos', []], ['Abertos', ['ABERTO']], ['Em análise', ['EM_ANALISE']], ['Em atendimento', ['EM_ATENDIMENTO']], ['Resolvidos', ['RESOLVIDO']], ['Encerrados', ['ENCERRADO']]],
-    columns: [['Protocolo', 'id'], ['Chamado', 'title', 'category'], ['Morador / Unidade', 'resident', 'unit'], ['Prioridade', 'priority'], ['Aberto em', 'openedAt'], ['Status', 'status']],
+    columns: [['Protocolo', 'code'], ['Chamado', 'title', 'category'], ['Morador / Unidade', 'resident', 'unit'], ['Prioridade', 'priority'], ['Aberto em', 'openedAt'], ['Status', 'status']],
     fields: [{ key: 'title', label: 'Título', required: true }, { key: 'description', label: 'Descrição', type: 'textarea', required: true }, { key: 'category', label: 'Categoria', type: 'select', options: ['Manutenção', 'Convivência', 'Segurança', 'Ocorrência'], required: true }, { key: 'location', label: 'Local', required: true }, { key: 'priority', label: 'Prioridade', type: 'select', options: priorities, required: true }, { key: 'notes', label: 'Observação', type: 'textarea' }],
   },
 }
