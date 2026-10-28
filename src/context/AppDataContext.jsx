@@ -9,12 +9,18 @@ import { moradoresService, unidadesService } from '../services/cadastrosService'
 import { chamadosService } from '../services/chamadosService'
 import { encomendasService } from '../services/encomendasService'
 import { carregarEncomendas, registrarEncomenda, registrarRetiradaEncomenda } from '../services/encomendasApi'
+import { carregarComunicados, excluirComunicado, salvarComunicado } from '../services/comunicadosApi'
 import { prestadoresService } from '../services/prestadoresService'
 import { reservasService } from '../services/reservasService'
 import { nowLabel, todayIso } from '../services/serviceUtils'
 import { visitantesService, visitorEntryError } from '../services/visitantesService'
 
 const AppDataContext = createContext(null)
+
+// Módulos operacionais já ligados à API: cada coleção carrega em separado, e a falha de uma
+// não derruba as outras nem os cadastros
+const operationalLoaders = { packages: carregarEncomendas, notices: carregarComunicados }
+const operationalKeys = Object.keys(operationalLoaders)
 
 function historyEntry(type, reference, unit, user = 'João Oliveira') {
   const now = new Date()
@@ -36,9 +42,9 @@ export function AppDataProvider({ children }) {
   const [data, setData] = useState(() => apiEnabled() ? apiInitialData : initialAppData)
   // Coleções que vêm da API (cadastros): status idle (mock) | loading | success | error
   const initialRemote = { status: apiEnabled() ? 'loading' : 'idle', error: '' }
-  const [remote, setRemote] = useState({ units: initialRemote, residents: initialRemote, packages: initialRemote })
+  const [remote, setRemote] = useState({ units: initialRemote, residents: initialRemote, ...Object.fromEntries(operationalKeys.map((key) => [key, initialRemote])) })
   const cadastrosRequest = useRef(0)
-  const packagesRequest = useRef(0)
+  const operationalRequests = useRef(Object.fromEntries(operationalKeys.map((key) => [key, 0])))
   const sessionRequest = useRef(0)
   const operationalAuthorization = useRef({ allowed: false, token: '', sessionRequest: 0 })
   const dataRef = useRef(data)
@@ -46,7 +52,7 @@ export function AppDataProvider({ children }) {
 
   const actions = useMemo(() => {
     const setCadastrosStatus = (state) => setRemote((current) => ({ ...current, units: state, residents: state }))
-    const setPackagesStatus = (state) => setRemote((current) => ({ ...current, packages: state }))
+    const setCollectionStatus = (key, state) => setRemote((current) => ({ ...current, [key]: state }))
 
     const authorizationIsCurrent = (authorization) => authorization.allowed
       && authorization.token === getToken()
@@ -69,26 +75,26 @@ export function AppDataProvider({ children }) {
       }
     }
 
-    // Encomendas vêm da API em separado: uma falha aqui não derruba os cadastros
-    async function reloadPackages({ silent = false } = {}) {
+    // Recarrega uma coleção operacional (encomendas, comunicados...); resposta obsoleta é descartada
+    async function reloadCollection(key, { silent = false } = {}) {
       const authorization = operationalAuthorization.current
       if (!authorizationIsCurrent(authorization)) return
-      const request = ++packagesRequest.current
-      if (!silent) setPackagesStatus({ status: 'loading', error: '' })
+      const request = ++operationalRequests.current[key]
+      if (!silent) setCollectionStatus(key, { status: 'loading', error: '' })
       try {
-        const packages = await carregarEncomendas()
-        if (request !== packagesRequest.current || !authorizationIsCurrent(authorization)) return
-        setData((current) => ({ ...current, packages }))
-        setPackagesStatus({ status: 'success', error: '' })
+        const records = await operationalLoaders[key]()
+        if (request !== operationalRequests.current[key] || !authorizationIsCurrent(authorization)) return
+        setData((current) => ({ ...current, [key]: records }))
+        setCollectionStatus(key, { status: 'success', error: '' })
       } catch (error) {
-        if (request !== packagesRequest.current || !authorizationIsCurrent(authorization)) return
-        setPackagesStatus({ status: 'error', error: error.message })
+        if (request !== operationalRequests.current[key] || !authorizationIsCurrent(authorization)) return
+        setCollectionStatus(key, { status: 'error', error: error.message })
       }
     }
 
-    async function packageCommand(run) {
+    async function collectionCommand(key, run) {
       await run()
-      await reloadPackages({ silent: true })
+      await reloadCollection(key, { silent: true })
     }
 
     // Comandos na API: lançam ApiError (a tela mantém o formulário aberto) e, se der certo, recarregam
@@ -106,27 +112,28 @@ export function AppDataProvider({ children }) {
       const isCurrent = () => request === sessionRequest.current && token === getToken()
       operationalAuthorization.current = { allowed: false, token, sessionRequest: request }
       ++cadastrosRequest.current
-      ++packagesRequest.current
+      operationalKeys.forEach((key) => { ++operationalRequests.current[key] })
       setData((current) => ({
         ...current,
         currentResident: emptyResident,
         condominium: { ...current.condominium, name: '' },
-        towers: [], units: [], residents: [], packages: [],
+        towers: [], units: [], residents: [],
+        ...Object.fromEntries(operationalKeys.map((key) => [key, []])),
       }))
       setCadastrosStatus({ status: 'loading', error: '' })
-      setPackagesStatus({ status: 'loading', error: '' })
-      let packagesError = null
+      operationalKeys.forEach((key) => setCollectionStatus(key, { status: 'loading', error: '' }))
+      const collectionErrors = {}
       try {
         const result = await loadSessionBeforeOperational({
           loadCurrentUser: carregarUsuarioLogado,
           loadOperationalData: async () => {
             if (!isCurrent()) return null
             operationalAuthorization.current = { allowed: true, token, sessionRequest: request }
-            const [cadastros, packages] = await Promise.all([
+            const [cadastros, ...collections] = await Promise.all([
               carregarCadastros(),
-              carregarEncomendas().catch((error) => { packagesError = error; return [] }),
+              ...operationalKeys.map((key) => operationalLoaders[key]().catch((error) => { collectionErrors[key] = error; return [] })),
             ])
-            return { ...cadastros, packages }
+            return { ...cadastros, ...Object.fromEntries(operationalKeys.map((key, index) => [key, collections[index]])) }
           },
           isCurrent,
         })
@@ -147,21 +154,23 @@ export function AppDataProvider({ children }) {
         setCadastrosStatus(result.status === 'operational-error'
           ? { status: 'error', error: result.error.message }
           : { status: 'success', error: '' })
-        const packagesFailure = result.status === 'operational-error' ? result.error : packagesError
-        setPackagesStatus(packagesFailure ? { status: 'error', error: packagesFailure.message } : { status: 'success', error: '' })
+        operationalKeys.forEach((key) => {
+          const failure = result.status === 'operational-error' ? result.error : collectionErrors[key]
+          setCollectionStatus(key, failure ? { status: 'error', error: failure.message } : { status: 'success', error: '' })
+        })
         return result
       } catch (error) {
         if (!isCurrent()) throw error
         operationalAuthorization.current = { allowed: false, token, sessionRequest: request }
         setCadastrosStatus({ status: 'error', error: error.message })
-        setPackagesStatus({ status: 'error', error: error.message })
+        operationalKeys.forEach((key) => setCollectionStatus(key, { status: 'error', error: error.message }))
         throw error
       }
     }
 
     return {
     reloadCadastros,
-    reloadPackages,
+    reloadCollection,
     reloadSession: restoreSession,
     reloadAll: restoreSession,
     createTower: (name) => command(() => criarTorre(name)),
@@ -169,8 +178,10 @@ export function AppDataProvider({ children }) {
     deleteUnitRemote: (id) => command(() => excluirUnidade(id)),
     saveResidentRemote: (form, editingId) => command(() => salvarMorador(form, editingId, dataRef.current.units)),
     setResidentStatusRemote: (id, status) => command(() => alterarStatusMorador(id, status)),
-    addPackageRemote: (form) => packageCommand(() => registrarEncomenda(form, dataRef.current.units)),
-    withdrawPackageRemote: (id) => packageCommand(() => registrarRetiradaEncomenda(id)),
+    addPackageRemote: (form) => collectionCommand('packages', () => registrarEncomenda(form, dataRef.current.units)),
+    withdrawPackageRemote: (id) => collectionCommand('packages', () => registrarRetiradaEncomenda(id)),
+    saveNoticeRemote: (form, editingId) => collectionCommand('notices', () => salvarComunicado(form, editingId, dataRef.current.towers)),
+    deleteNoticeRemote: (id) => collectionCommand('notices', () => excluirComunicado(id)),
     addVisitor(payload, source = 'PORTARIA') {
       let created
       setData((current) => {

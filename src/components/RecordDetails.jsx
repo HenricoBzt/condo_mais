@@ -11,7 +11,7 @@ const labels = {
   area: 'Área comum', requestedByOwner: 'Solicitação feita por proprietário', isOwner: 'É proprietário',
   authorized: 'Autorização prévia', title: 'Título', content: 'Conteúdo', priority: 'Prioridade',
   destination: 'Destino', description: 'Descrição', category: 'Categoria', openedAt: 'Aberto em',
-  type: 'Operação', reference: 'Referência', user: 'Registrado por', timestamp: 'Data e hora do evento',
+  type: 'Operação', reference: 'Referência', user: 'Registrado por', timestamp: 'Data e hora do evento', author: 'Publicado por',
 }
 
 // Allowlist de apresentação dos mocks atuais, não um DTO definitivo.
@@ -21,11 +21,13 @@ export const detailFields = {
   packages: ['code', 'resident', 'tower', 'unit', 'receivedAt', 'doorman', 'status', 'withdrawnAt', 'withdrawnBy', 'notes'],
   reservations: ['id', 'area', 'resident', 'tower', 'unit', 'date', 'startTime', 'endTime', 'status', 'requestedByOwner', 'notes'],
   tickets: ['id', 'title', 'description', 'category', 'location', 'resident', 'tower', 'unit', 'priority', 'status', 'openedAt', 'notes'],
-  notices: ['id', 'title', 'content', 'priority', 'destination', 'tower', 'startDate', 'endDate', 'status'],
+  notices: ['id', 'title', 'content', 'priority', 'destination', 'tower', 'startDate', 'endDate', 'author', 'status'],
   residents: ['id', 'name', 'cpf', 'email', 'phone', 'tower', 'unit', 'relation', 'isOwner', 'status'],
   units: ['id', 'number', 'tower', 'status', 'owners', 'residents'],
   history: ['id', 'timestamp', 'date', 'time', 'type', 'reference', 'unit', 'user'],
 }
+// Id da API (UUID) não diz nada a quem lê: os detalhes mostram título, código ou nome no lugar
+const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(value || ''))
 const scalar = (value) => ['string', 'number'].includes(typeof value) ? String(value) : ''
 function displayValue(key, value) {
   if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
@@ -37,7 +39,7 @@ function displayValue(key, value) {
 export default function RecordDetails({ record, collection }) {
   if (!record) return null
   return <>
-    <div className="record-details">{(detailFields[collection] || Object.keys(labels)).filter((key) => Object.hasOwn(record, key)).map((key) => <div key={key}><small>{labels[key]}</small><strong>{displayValue(key, record[key])}</strong></div>)}</div>
+    <div className="record-details">{(detailFields[collection] || Object.keys(labels)).filter((key) => Object.hasOwn(record, key) && !(key === 'id' && isUuid(record.id))).map((key) => <div key={key}><small>{labels[key]}</small><strong>{displayValue(key, record[key])}</strong></div>)}</div>
     {Array.isArray(record.comments) && <section className="comment-box" aria-label="Comentários"><h3>Comentários</h3>{record.comments.length ? record.comments.map((comment, index) => <article key={index}><p>{typeof comment === 'string' ? comment : scalar(comment?.content)}</p>{comment && typeof comment === 'object' && scalar(comment.author) && <small>{scalar(comment.author)}</small>}{comment && typeof comment === 'object' && scalar(comment.createdAt) && <small> · {scalar(comment.createdAt)}</small>}</article>) : <p>Nenhum comentário registrado.</p>}</section>}
   </>
 }
