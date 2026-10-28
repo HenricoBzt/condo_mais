@@ -1,4 +1,4 @@
-import { ApiError, getToken, tokenClaims } from '../../services/api.js'
+import { ApiError, endExpiredSession, getToken, tokenClaims, tokenExpired } from '../../services/api.js'
 import { carregarSessaoAtual } from '../../services/sessionApi.js'
 
 export const SESSION_AREA = Object.freeze({
@@ -82,8 +82,8 @@ function redirectToOwnArea(user) {
     : { status: SESSION_ACCESS.UNKNOWN, destination: '' }
 }
 
-export function decideSessionAccess({ token, user, area }) {
-  if (!token || !tokenClaims(token)) return { status: SESSION_ACCESS.NO_SESSION, destination: '/' }
+export function decideSessionAccess({ token, user, area, now = Date.now() }) {
+  if (!token || !tokenClaims(token) || tokenExpired(token, now)) return { status: SESSION_ACCESS.NO_SESSION, destination: '/' }
   if (!user || typeof user !== 'object') return { status: SESSION_ACCESS.UNKNOWN, destination: '' }
 
   const profile = normalizeProfile(user.perfil)
@@ -114,8 +114,14 @@ export async function resolveSessionAccess({
   area,
   token = getToken(),
   loadCurrentUser = carregarSessaoAtual,
+  now = Date.now(),
 } = {}) {
   if (!token || !tokenClaims(token)) return { status: SESSION_ACCESS.NO_SESSION, destination: '/' }
+  // Token vencido nem chega ao servidor: a sessão termina aqui, com aviso no login
+  if (tokenExpired(token, now)) {
+    if (token === getToken()) endExpiredSession()
+    return { status: SESSION_ACCESS.NO_SESSION, destination: '/' }
+  }
   try {
     const user = await loadCurrentUser()
     return decideSessionAccess({ token, user, area })

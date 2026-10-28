@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAppData } from '../../context/AppDataContext'
 import AuthLayout from '../../layouts/AuthLayout'
 import { validateMockLogin } from '../../mocks/mockUsers'
-import { apiEnabled, getToken } from '../../services/api'
+import { apiEnabled, clearExpiredSessionNotice, getToken, hasExpiredSessionNotice } from '../../services/api'
 import { cpfComplete, formatCpf, login, logout } from '../../services/authApi'
 import { authenticateAndEnter } from '../../features/session/authenticatedNavigation'
 
@@ -17,6 +17,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [expiredNotice] = useState(hasExpiredSessionNotice)
+  useEffect(() => { clearExpiredSessionNotice() }, [])
   const formRef = useRef(null)
   const errorId = useId()
   useEffect(() => { if (error) formRef.current?.querySelector('[aria-invalid="true"]')?.focus() }, [error])
@@ -65,6 +67,7 @@ export default function LoginPage() {
           <span className="input-wrap"><LockKeyhole size={18} /><input autoComplete="current-password" aria-required="true" aria-invalid={Boolean(error && invalidFields.includes('password')) || undefined} aria-describedby={error && invalidFields.includes('password') ? errorId : undefined} value={password} onChange={(e) => { setPassword(e.target.value); setError('') }} type={showPassword ? 'text' : 'password'} placeholder="Digite sua senha" /><button className="password-toggle" type="button" aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={showPassword} onClick={() => setShowPassword((value) => !value)}><Eye size={18} /></button></span>
         </label>
         <div className="form-row"><label className="check"><input type="checkbox" /> Lembrar de mim</label><button type="button" className="text-link" onClick={() => navigate('/recuperar-senha')}>Esqueci minha senha</button></div>
+        {expiredNotice && !error && <p className="form-notice" role="status">Sua sessão expirou. Entre novamente para continuar.</p>}
         {error && <p id={errorId} className="form-error" role="alert">{error}</p>}
         <button className="primary-button" type="submit" disabled={submitting}>{submitting ? 'Entrando...' : 'Entrar'}</button>
       </form>

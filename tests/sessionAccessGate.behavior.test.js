@@ -139,3 +139,16 @@ test('resposta atrasada da sessão antiga não substitui a decisão da sessão n
   assert.ok(view.getByText('Sessão nova autorizada'))
   assert.equal(view.queryByText('Resposta antiga'), null)
 })
+
+test('área liberada volta ao login sozinha quando o token vence, com aviso de sessão expirada', async () => {
+  const exp = Math.floor(Date.now() / 1000) + 1
+  setToken(jwt({ perfil: 'MORADOR', condominio_id: 'c-1', exp }))
+  const resolver = async ({ area }) => decideSessionAccess({ token: sessionStorage.getItem('condoplus.token') || '', user: { perfil: 'MORADOR' }, area })
+  const view = renderProtected({ path: '/morador', area: SESSION_AREA.MORADOR, resolver, protectedText: 'Painel do morador', extraRoutes: [['/', 'Tela de login']] })
+  assert.ok(await view.findByText('Painel do morador'))
+
+  assert.ok(await view.findByText('Tela de login', {}, { timeout: 3000 }))
+  assert.equal(view.queryByText('Painel do morador'), null)
+  assert.equal(sessionStorage.getItem('condoplus.token'), null)
+  assert.equal(sessionStorage.getItem('condoplus.sessaoExpirada'), '1')
+})
