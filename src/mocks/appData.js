@@ -30,11 +30,11 @@ export const initialAppData = {
     { id: 'PRE-204', name: 'Paulo Ferreira', cpf: '404.505.606-77', company: 'EletroMais', service: 'Manutenção elétrica', tower: 'Área comum', location: 'Garagem', date: '2026-09-07', time: '11:20', notes: '', status: 'SAIU', entryAt: '07/09 · 09:00', exitAt: '07/09 · 11:20' },
   ],
   packages: [
-    { id: 'ENC-1048', tower: 'Torre A', unit: '203', resident: 'Carlos Silva', notes: 'Caixa média', receivedAt: 'Hoje · 14:32', doorman: 'João Oliveira', status: 'AGUARDANDO_RETIRADA' },
-    { id: 'ENC-1047', tower: 'Torre B', unit: '305', resident: 'Ana Souza', notes: '', receivedAt: 'Hoje · 12:18', doorman: 'João Oliveira', status: 'AGUARDANDO_RETIRADA' },
-    { id: 'ENC-1046', tower: 'Torre C', unit: '402', resident: 'Mariana Oliveira', notes: '', receivedAt: 'Hoje · 09:40', doorman: 'Maria Santos', status: 'AGUARDANDO_RETIRADA' },
-    { id: 'ENC-1042', tower: 'Torre A', unit: '108', resident: 'João Santos', notes: '', receivedAt: '01/09 · 17:45', doorman: 'Maria Santos', status: 'RETIRADA', withdrawnAt: '01/09 · 19:02' },
-    { id: 'ENC-1038', tower: 'Torre B', unit: '207', resident: 'Ricardo Lima', notes: '', receivedAt: '31/08 · 15:20', doorman: 'João Oliveira', status: 'DEVOLVIDA' },
+    { id: 'ENC-1048', code: 'ENC-1048', tower: 'Torre A', unit: '203', resident: 'Carlos Silva', notes: 'Caixa média', receivedAt: 'Hoje · 14:32', doorman: 'João Oliveira', status: 'AGUARDANDO_RETIRADA' },
+    { id: 'ENC-1047', code: 'ENC-1047', tower: 'Torre B', unit: '305', resident: 'Ana Souza', notes: '', receivedAt: 'Hoje · 12:18', doorman: 'João Oliveira', status: 'AGUARDANDO_RETIRADA' },
+    { id: 'ENC-1046', code: 'ENC-1046', tower: 'Torre C', unit: '402', resident: 'Mariana Oliveira', notes: '', receivedAt: 'Hoje · 09:40', doorman: 'Maria Santos', status: 'AGUARDANDO_RETIRADA' },
+    { id: 'ENC-1042', code: 'ENC-1042', tower: 'Torre A', unit: '108', resident: 'João Santos', notes: '', receivedAt: '01/09 · 17:45', doorman: 'Maria Santos', status: 'RETIRADA', withdrawnAt: '01/09 · 19:02' },
+    { id: 'ENC-1038', code: 'ENC-1038', tower: 'Torre B', unit: '207', resident: 'Ricardo Lima', notes: '', receivedAt: '31/08 · 15:20', doorman: 'João Oliveira', status: 'DEVOLVIDA' },
   ],
   reservations: [
     { id: 'RES-301', area: 'Salão de Festas', resident: 'Carlos Silva', tower: 'Torre A', unit: '203', date: '2026-09-15', startTime: '18:00', endTime: '23:00', notes: 'Aniversário', status: 'CONFIRMADA' },
