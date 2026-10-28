@@ -10,6 +10,7 @@ import { chamadosService } from '../services/chamadosService'
 import { encomendasService } from '../services/encomendasService'
 import { carregarEncomendas, registrarEncomenda, registrarRetiradaEncomenda } from '../services/encomendasApi'
 import { carregarComunicados, excluirComunicado, salvarComunicado } from '../services/comunicadosApi'
+import { alterarStatusReserva, carregarAreasComuns, carregarReservas, solicitarReserva } from '../services/reservasApi'
 import { prestadoresService } from '../services/prestadoresService'
 import { reservasService } from '../services/reservasService'
 import { nowLabel, todayIso } from '../services/serviceUtils'
@@ -19,7 +20,7 @@ const AppDataContext = createContext(null)
 
 // Módulos operacionais já ligados à API: cada coleção carrega em separado, e a falha de uma
 // não derruba as outras nem os cadastros
-const operationalLoaders = { packages: carregarEncomendas, notices: carregarComunicados }
+const operationalLoaders = { packages: carregarEncomendas, notices: carregarComunicados, reservations: carregarReservas, areas: carregarAreasComuns }
 const operationalKeys = Object.keys(operationalLoaders)
 
 function historyEntry(type, reference, unit, user = 'João Oliveira') {
@@ -35,7 +36,7 @@ export const apiInitialData = {
   currentResident: emptyResident,
   condominium: { ...initialAppData.condominium, name: '' },
   towers: [], units: [], residents: [],
-  visitors: [], providers: [], packages: [], reservations: [], notices: [], tickets: [], history: [], notifications: [],
+  visitors: [], providers: [], packages: [], reservations: [], notices: [], tickets: [], history: [], notifications: [], areas: [],
 }
 
 export function AppDataProvider({ children }) {
@@ -182,6 +183,8 @@ export function AppDataProvider({ children }) {
     withdrawPackageRemote: (id) => collectionCommand('packages', () => registrarRetiradaEncomenda(id)),
     saveNoticeRemote: (form, editingId) => collectionCommand('notices', () => salvarComunicado(form, editingId, dataRef.current.towers)),
     deleteNoticeRemote: (id) => collectionCommand('notices', () => excluirComunicado(id)),
+    addReservationRemote: (form) => collectionCommand('reservations', () => solicitarReserva(form, dataRef.current.areas)),
+    setReservationStatusRemote: (id, status) => collectionCommand('reservations', () => alterarStatusReserva(id, status)),
     addVisitor(payload, source = 'PORTARIA') {
       let created
       setData((current) => {

@@ -30,15 +30,35 @@ const encomenda = (id, status, codigo) => ({
 })
 
 // API falsa: o que cada rota responde e o que foi chamado
-function fakeApi({ packages = [], packagesStatus = 200 } = {}) {
+const reserva = (id, status, extra = {}) => ({
+  id, areaId: 'ar-salao', areaNome: 'Salão de Festas', dataReserva: '2099-12-20', horarioInicio: '18:00:00', horarioFim: '22:00:00',
+  status, moradorNome: 'Carla', apartamentoNumero: '101', torreNome: 'Torre A', aprovadorNome: null, ...extra,
+})
+
+function fakeApi({ packages = [], packagesStatus = 200, me = { id: 'u-1', nome: 'João', perfil: 'PORTARIA', condominioNome: 'Residencial' }, reservations = [] } = {}) {
   const calls = []
   let list = [...packages]
+  let bookings = [...reservations]
   globalThis.fetch = async (url, init = {}) => {
     const path = new URL(url).pathname
     const method = init.method || 'GET'
     calls.push({ method, path, body: init.body ? JSON.parse(init.body) : undefined })
     const reply = (status, body) => ({ ok: status < 400, status, json: async () => body, text: async () => (body === undefined ? '' : JSON.stringify(body)) })
-    if (path === '/usuarios/me') return reply(200, { id: 'u-1', nome: 'João', perfil: 'PORTARIA', condominioNome: 'Residencial' })
+    if (path === '/usuarios/me') return reply(200, me)
+    if (path === '/condominios/areas-comuns') return reply(200, [
+      { id: 'ar-salao', nome: 'Salão de Festas', reservavel: true, exigeAprovacao: true, ativo: true },
+      { id: 'ar-piscina', nome: 'Piscina', reservavel: false, exigeAprovacao: false, ativo: true },
+      { id: 'ar-quadra', nome: 'Quadra', reservavel: true, exigeAprovacao: false, ativo: false },
+    ])
+    if (path === '/interativo/reservas/ocupacao') return reply(200, [{ horarioInicio: '18:00:00', horarioFim: '22:00:00', status: 'CONFIRMADA' }])
+    if (path === '/interativo/reservas' && method === 'GET') return reply(200, bookings)
+    if (path === '/interativo/reservas' && method === 'POST') { bookings = [reserva('r-new', 'AGUARDANDO APROVACAO'), ...bookings]; return reply(200, bookings[0]) }
+    if (/^\/interativo\/reservas\/[^/]+\/(aprovar|recusar|cancelar)$/.test(path)) {
+      const [, , , id, action] = path.split('/')
+      const status = { aprovar: 'CONFIRMADA', recusar: 'RECUSADA', cancelar: 'CANCELADA' }[action]
+      bookings = bookings.map((item) => item.id === id ? { ...item, status } : item)
+      return reply(200, bookings.find((item) => item.id === id))
+    }
     if (path === '/condominios/torres') return reply(200, [{ id: 't-a', nome: 'Torre A' }])
     if (path === '/condominios/apartamentos') return reply(200, [{ id: 'a-101', numero: '101', torreId: 't-a', status: 'OCUPADO' }])
     if (path === '/usuarios') return reply(403, {})
@@ -113,4 +133,57 @@ test('comunicados também carregam na sessão e publicar/excluir passam pela API
   assert.ok(calls.some((call) => call.method === 'DELETE' && call.path === '/interativo/avisos/av-1'))
   // Depois de cada comando a lista é recarregada do servidor
   assert.ok(calls.filter((call) => call.method === 'GET' && call.path === '/interativo/avisos').length >= 3)
+})
+
+const morador = { id: 'u-9', nome: 'Carla', perfil: 'MORADOR', apartamentoId: 'a-101', apartamentoNumero: '101', torreNome: 'Torre A', vinculo: 'INQUILINO', condominioNome: 'Residencial' }
+
+test('reservas e áreas comuns carregam na sessão; confirmada que já passou vira Concluída', async () => {
+  fakeApi({ me: morador, reservations: [reserva('r-1', 'AGUARDANDO APROVACAO'), reserva('r-2', 'CONFIRMADA', { dataReserva: '2020-01-10' })] })
+  sessionStorage.setItem('condoplus.token', jwt({ perfil: 'MORADOR', condominio_id: 'c-1', exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const state = renderProvider()
+  await waitFor(() => assert.equal(state.remote.reservations.status, 'success'))
+  assert.deepEqual(state.data.reservations.map((item) => [item.id, item.status, item.startTime]), [['r-1', 'AGUARDANDO_APROVACAO', '18:00'], ['r-2', 'CONCLUIDA', '18:00']])
+  assert.equal(state.data.areas.length, 3)
+})
+
+test('tela de reservas do morador: só áreas reserváveis, agenda real e pedido pela API', async () => {
+  const calls = fakeApi({ me: morador, reservations: [reserva('r-1', 'CONFIRMADA')] })
+  sessionStorage.setItem('condoplus.token', jwt({ perfil: 'MORADOR', condominio_id: 'c-1', exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const { fireEvent } = await import('@testing-library/react')
+  const { MemoryRouter } = await import('react-router-dom')
+  const { ResidentListPage } = await server.ssrLoadModule('/src/pages/morador/ResidentPages.jsx')
+  const view = render(React.createElement(AppDataProvider, null, React.createElement(MemoryRouter, null, React.createElement(ResidentListPage, { type: 'reservas' }))))
+
+  assert.ok(await view.findByText('Salão de Festas'))
+  fireEvent.click(view.getByRole('button', { name: /Nova reserva/ }))
+  const area = view.getByLabelText(/Área comum/)
+  // Inativa e não reservável ficam de fora
+  assert.deepEqual([...area.querySelectorAll('option')].map((option) => option.textContent), ['Selecione', 'Salão de Festas'])
+  fireEvent.change(area, { target: { value: 'Salão de Festas' } })
+  fireEvent.change(view.getByLabelText(/^Data/), { target: { value: '2099-12-20' } })
+  fireEvent.change(view.getByLabelText(/Horário inicial/), { target: { value: '19:00' } })
+  fireEvent.change(view.getByLabelText(/Horário final/), { target: { value: '20:00' } })
+  assert.ok(await view.findByText('Este horário já está ocupado.'))
+  assert.ok(calls.some((call) => call.path === '/interativo/reservas/ocupacao'))
+  assert.ok(view.getByText(/fica pendente até o proprietário/))
+
+  fireEvent.change(view.getByLabelText(/Horário inicial/), { target: { value: '22:00' } })
+  fireEvent.change(view.getByLabelText(/Horário final/), { target: { value: '23:30' } })
+  assert.ok(await view.findByText('Horário disponível.'))
+  fireEvent.click(view.getAllByRole('button', { name: /Nova reserva/ }).at(-1))
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'POST' && call.path === '/interativo/reservas')))
+  assert.deepEqual(calls.find((call) => call.method === 'POST' && call.path === '/interativo/reservas').body, { areaId: 'ar-salao', dataReserva: '2099-12-20', horarioInicio: '22:00', horarioFim: '23:30' })
+  assert.ok(await view.findByText('Reserva solicitada. Ela fica pendente até ser aprovada.'))
+})
+
+test('aprovar e cancelar reservas passam pelas rotas do backend', async () => {
+  const calls = fakeApi({ me: { ...morador, vinculo: 'PROPRIETARIO' }, reservations: [reserva('r-1', 'AGUARDANDO APROVACAO'), reserva('r-2', 'CONFIRMADA')] })
+  sessionStorage.setItem('condoplus.token', jwt({ perfil: 'MORADOR', condominio_id: 'c-1', exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const state = renderProvider()
+  await waitFor(() => assert.equal(state.remote.reservations.status, 'success'))
+  await act(async () => { await state.actions.setReservationStatusRemote('r-1', 'CONFIRMADA') })
+  await act(async () => { await state.actions.setReservationStatusRemote('r-2', 'CANCELADA') })
+  assert.ok(calls.some((call) => call.method === 'PUT' && call.path === '/interativo/reservas/r-1/aprovar'))
+  assert.ok(calls.some((call) => call.method === 'PUT' && call.path === '/interativo/reservas/r-2/cancelar'))
+  await waitFor(() => assert.deepEqual(state.data.reservations.map((item) => item.status), ['CONFIRMADA', 'CANCELADA']))
 })
