@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, Outlet } from 'react-router-dom'
-import { apiEnabled } from '../services/api'
+import { apiEnabled, endExpiredSession, getToken, tokenExpiresAt } from '../services/api'
 import { SESSION_ACCESS, SESSION_AREA, resolveSessionAccess } from '../features/session/sessionAccess'
 import SetupAccessStatus from './SetupAccessStatus'
 import { subscribeToSessionChanges } from '../services/sessionEvents'
@@ -17,6 +17,18 @@ export default function SessionAccessGate({ area, children, resolver = resolveSe
   const retry = invalidate
 
   useEffect(() => subscribeToSessionChanges(invalidate), [invalidate])
+
+  // Com a área liberada, a sessão termina sozinha quando o token vence, mesmo que a tela fique parada
+  useEffect(() => {
+    if (!apiActive || decision.status !== SESSION_ACCESS.ALLOWED) return undefined
+    const token = getToken()
+    const expiresAt = tokenExpiresAt(token)
+    if (!expiresAt) return undefined
+    // setTimeout aceita no máximo ~24,8 dias; acima disso, a verificação da próxima navegação resolve
+    const delay = Math.min(Math.max(expiresAt - Date.now(), 0), 2 ** 31 - 1)
+    const timer = setTimeout(() => { if (getToken() === token) endExpiredSession() }, delay)
+    return () => clearTimeout(timer)
+  }, [apiActive, decision.status, revision])
 
   useEffect(() => {
     let current = true

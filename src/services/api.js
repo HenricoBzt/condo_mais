@@ -3,6 +3,7 @@ import { notifySessionChanged } from './sessionEvents.js'
 // Cliente HTTP da API Condo+. Sem VITE_API_URL, o app continua usando apenas os mocks locais.
 const env = import.meta.env || {}
 const TOKEN_KEY = 'condoplus.token'
+const EXPIRED_NOTICE_KEY = 'condoplus.sessaoExpirada'
 
 export const API_URL = (env.VITE_API_URL || '').replace(/\/+$/, '')
 
@@ -34,6 +35,32 @@ export function tokenClaims(token = getToken()) {
 }
 
 export function condominioIdFromToken(token = getToken()) { return tokenClaims(token)?.condominio_id || '' }
+
+// Momento (ms) em que o token vence, pela claim exp; 0 quando o token não informa
+export function tokenExpiresAt(token = getToken()) {
+  const exp = Number(tokenClaims(token)?.exp)
+  return Number.isFinite(exp) && exp > 0 ? exp * 1000 : 0
+}
+
+export function tokenExpired(token = getToken(), now = Date.now()) {
+  const expiresAt = tokenExpiresAt(token)
+  return Boolean(expiresAt) && expiresAt <= now
+}
+
+// Encerra a sessão vencida ou recusada pelo servidor e deixa um aviso para a tela de login
+export function endExpiredSession() {
+  try { if (getToken()) sessionStorage.setItem(EXPIRED_NOTICE_KEY, '1') } catch { /* sem sessionStorage */ }
+  setToken('')
+}
+
+// O aviso aparece uma vez só, no login seguinte à expiração: a tela lê e depois apaga
+export function hasExpiredSessionNotice() {
+  try { return sessionStorage.getItem(EXPIRED_NOTICE_KEY) === '1' } catch { return false }
+}
+
+export function clearExpiredSessionNotice() {
+  try { sessionStorage.removeItem(EXPIRED_NOTICE_KEY) } catch { /* sem sessionStorage */ }
+}
 
 function errorMessage(status) {
   if (status === 401) return 'Sessão inválida ou expirada. Entre novamente.'
@@ -67,7 +94,7 @@ async function request(method, path, { params = {}, body, fetchImpl = fetch, exp
   if (!response.ok) {
     const error = await responseError(response)
     // Uma resposta atrasada só pode encerrar a sessão que originou a requisição.
-    if (response.status === 401 && token && token === getToken()) setToken('')
+    if (response.status === 401 && token && token === getToken()) endExpiredSession()
     throw error
   }
   if (expectedStatus !== undefined && response.status !== expectedStatus) {
