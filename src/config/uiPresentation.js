@@ -26,7 +26,9 @@ export function emptyMessage(collection, filtered = false) {
 
 export function confirmationMessage(record, label, status) {
   if (!record) return ''
-  const identity = [record.name || record.title || record.area, record.id].filter(Boolean).join(' · ')
+  // Registros da API têm id UUID, que não ajuda a reconhecer o item: mostra o código, quando houver
+  const readableId = record.code || (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(record.id || '')) ? '' : record.id)
+  const identity = [record.name || record.title || record.area, readableId].filter(Boolean).join(' · ')
   const location = [record.unit || record.number || record.location, record.tower].filter(Boolean).join(' — ')
   const period = record.area ? [record.date, record.startTime, record.endTime].filter(Boolean).join(' · ') : ''
   const consequences = {
@@ -39,6 +41,7 @@ export function confirmationMessage(record, label, status) {
     RECUSADA: 'A solicitação de reserva será recusada.',
     CONFIRMADA: 'A reserva será confirmada para o período informado.',
     INATIVO: 'O cadastro ficará inativo; os registros anteriores serão mantidos.',
+    EXCLUIDO: 'O comunicado será excluído e deixará de aparecer para os moradores.',
     EXCLUIDA: 'A unidade será excluída definitivamente. Unidades com moradores ou registros vinculados não podem ser excluídas.',
     ATIVO: 'O cadastro voltará a ficar ativo.',
     ENCERRADO: 'O registro será marcado como encerrado.',

@@ -42,6 +42,9 @@ function fakeApi({ packages = [], packagesStatus = 200 } = {}) {
     if (path === '/condominios/torres') return reply(200, [{ id: 't-a', nome: 'Torre A' }])
     if (path === '/condominios/apartamentos') return reply(200, [{ id: 'a-101', numero: '101', torreId: 't-a', status: 'OCUPADO' }])
     if (path === '/usuarios') return reply(403, {})
+    if (path === '/interativo/avisos' && method === 'GET') return reply(200, [{ id: 'av-1', titulo: 'Falta de água', conteudo: 'Bomba', prioridade: 'URGENTE', dataValidade: null, ativo: true, criadoEm: '2026-10-27T09:00:00', autorNome: 'Admin', torreId: null, torreNome: null }])
+    if (path === '/interativo/avisos' && method === 'POST') return reply(200, {})
+    if (path === '/interativo/avisos/av-1' && method === 'DELETE') return reply(200, undefined)
     if (path === '/portaria/encomendas' && method === 'GET') return packagesStatus === 200 ? reply(200, list) : reply(packagesStatus, { mensagem: 'Falha nas encomendas' })
     if (path === '/portaria/encomendas/recebimento') { list = [encomenda('e-new', 'AGUARDANDO RETIRADA', 'NOVA1'), ...list]; return reply(200, list[0]) }
     if (path.endsWith('/retirada')) { list = list.map((item) => item.id === 'e-1' ? { ...item, status: 'RETIRADA' } : item); return reply(200, list[0]) }
@@ -94,4 +97,20 @@ test('falha só nas encomendas não derruba os cadastros', async () => {
   assert.equal(state.remote.units.status, 'success')
   assert.equal(state.data.units.length, 1)
   assert.deepEqual(state.data.packages, [])
+})
+
+test('comunicados também carregam na sessão e publicar/excluir passam pela API', async () => {
+  const calls = fakeApi()
+  sessionStorage.setItem('condoplus.token', jwt({ perfil: 'PORTARIA', condominio_id: 'c-1', exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const state = renderProvider()
+  await waitFor(() => assert.equal(state.remote.notices.status, 'success'))
+  assert.equal(state.data.notices[0].title, 'Falta de água')
+  assert.equal(state.data.notices[0].status, 'ATIVO')
+
+  await act(async () => { await state.actions.saveNoticeRemote({ title: 'Novo', content: 'Texto', priority: 'NORMAL' }) })
+  assert.deepEqual(calls.find((call) => call.method === 'POST' && call.path === '/interativo/avisos').body, { titulo: 'Novo', conteudo: 'Texto', prioridade: 'NORMAL', dataValidade: null, torreId: null })
+  await act(async () => { await state.actions.deleteNoticeRemote('av-1') })
+  assert.ok(calls.some((call) => call.method === 'DELETE' && call.path === '/interativo/avisos/av-1'))
+  // Depois de cada comando a lista é recarregada do servidor
+  assert.ok(calls.filter((call) => call.method === 'GET' && call.path === '/interativo/avisos').length >= 3)
 })
