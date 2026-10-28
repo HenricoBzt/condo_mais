@@ -13,6 +13,7 @@ import ResidentLayout from '../../layouts/ResidentLayout'
 import { logout } from '../../services/authApi'
 import { reservasService } from '../../services/reservasService'
 import { availabilityFromOccupation, bookableAreas, carregarOcupacao } from '../../services/reservasApi'
+import { TICKET_COMMON_AREA, ticketUnitLabel } from '../../services/chamadosApi'
 import { statusLabel, sameUnit, activeNotices, basicValidation } from '../../services/serviceUtils'
 import { visitantesService } from '../../services/visitantesService'
 
@@ -95,9 +96,15 @@ function ResidentListModule({ type }) {
   const ownLocation = `Unidade ${data.currentResident.unit} · ${data.currentResident.tower}`
   // Com a API ligada, reservas usam as áreas do condomínio e a agenda real (/ocupacao)
   const remoteReservations = Boolean(remote?.reservations && remote.reservations.status !== 'idle') && ['reservas', 'aprovacoes'].includes(type)
+  const remoteTickets = Boolean(remote?.tickets && remote.tickets.status !== 'idle') && type === 'chamados'
+  const [comment, setComment] = useState('')
   const areaOptions = bookableAreas(data.areas || [])
   const selectedArea = areaOptions.find((area) => area.name === form.area)
-  const fields = type === 'chamados'
+  // Chamado na API: a própria unidade ou a área comum; sem categoria, vai para Outros
+  const ownUnit = (data.units || []).find((unit) => unit.id === data.currentResident.unitId)
+  const fields = remoteTickets
+    ? [{ key: 'title', label: 'Título', required: true }, { key: 'description', label: 'Descrição', type: 'textarea', required: true }, { key: 'category', label: 'Categoria (sem escolha, vai para Outros)', type: 'select', options: (data.ticketCategories || []).map((category) => category.name) }, { key: 'location', label: 'Local', type: 'select', options: [...(ownUnit ? [ticketUnitLabel(ownUnit)] : []), TICKET_COMMON_AREA], required: true }, { key: 'priority', label: 'Prioridade', type: 'select', options: priorities, required: true }]
+    : type === 'chamados'
     ? ticketFields(data.currentResident, data.units)
     : remoteReservations
       ? config.fields.filter((field) => field.key !== 'notes').map((field) => field.key === 'area' ? { ...field, options: areaOptions.map((area) => area.name) } : field)
@@ -117,8 +124,9 @@ function ResidentListModule({ type }) {
   const records = useMemo(() => {
     if (type === 'visitantes') return visitantesService.listar(data.visitors, { unit: data.currentResident.unit, tower: data.currentResident.tower, statuses })
     if (type === 'reservas' || type === 'aprovacoes') return reservasService.listar(data.reservations, { unit: data.currentResident.unit, tower: data.currentResident.tower, statuses })
-    return data.tickets.filter((item) => sameUnit(item, data.currentResident) && (!statuses.length || statuses.includes(item.status)))
-  }, [data, statuses, type])
+    // Na API o servidor já entrega só os chamados do morador e da unidade dele (inclusive de área comum)
+    return data.tickets.filter((item) => (remoteTickets || sameUnit(item, data.currentResident)) && (!statuses.length || statuses.includes(item.status)))
+  }, [data, statuses, type, remoteTickets])
   const remoteAvailability = () => {
     if (occupation.key !== occupationKey) return { available: false, message: 'Verificando disponibilidade...' }
     if (occupation.error) return { available: false, message: occupation.error }
@@ -143,6 +151,18 @@ function ResidentListModule({ type }) {
       if (periodError) { setError(periodError); return }
     }
     if (type === 'reservas' && !availability?.available) { setError(availability?.message || 'Verifique a disponibilidade.'); return }
+    if (remoteTickets) {
+      setBusy(true)
+      try {
+        await actions.openTicketRemote(form)
+        setOpen(false); setForm({}); flash('Chamado aberto com sucesso.')
+      } catch (saveError) {
+        setError(saveError.message)
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
     if (remoteReservations && type === 'reservas') {
       setBusy(true)
       try {
@@ -182,17 +202,36 @@ function ResidentListModule({ type }) {
   const canCancel = (record) => !['CANCELADA', 'CONCLUIDA', 'RECUSADA'].includes(record.status) && (!remoteReservations || record.resident === data.currentResident.name)
   function summary(record) {
     if (type === 'visitantes') return [`${record.startDate} · ${record.startTime}`, `Até ${record.endDate} · ${record.endTime}`, statusLabel(record.status)]
-    if (type === 'chamados') return [record.id, record.openedAt, statusLabel(record.status)]
+    if (type === 'chamados') return [record.code || record.id, record.openedAt, statusLabel(record.status)]
     return [record.date, `${record.startTime} – ${record.endTime}`, statusLabel(record.status)]
   }
   if (type === 'aprovacoes' && !data.currentResident.isOwner) return <ResidentLayout><section className="resident-page"><ResidentPageHeader backTo="/morador/mais" title="Aprovações" subtitle="Acesso exclusivo para proprietários." /><EmptyState title="Seu vínculo não possui permissão para aprovar reservas." /></section></ResidentLayout>
   const collection = type === 'visitantes' ? 'visitors' : type === 'chamados' ? 'tickets' : 'reservations'
-  const ownRecords = data[collection].filter((item) => sameUnit(item, data.currentResident))
+  const ownRecords = remoteTickets ? data.tickets : data[collection].filter((item) => sameUnit(item, data.currentResident))
+  function openDetails(record) {
+    setDetails(record); setComment('')
+    if (remoteTickets) refreshTicket(record.id)
+  }
+  function refreshTicket(id) {
+    actions.loadTicketDetail(id).then((full) => setDetails((current) => current?.id === id ? full : current), () => {})
+  }
+  async function sendComment() {
+    if (busy) return
+    setBusy(true)
+    try {
+      await actions.commentTicketRemote(details.id, comment)
+      setComment(''); refreshTicket(details.id); flash('Comentário adicionado.')
+    } catch (commentError) {
+      flash(commentError.message)
+    } finally {
+      setBusy(false)
+    }
+  }
   const emptyFiltered = Boolean(ownRecords.length && statuses.length)
   const Icon = config.icon
-  return <ResidentLayout><section className="resident-page"><ResidentPageHeader backTo="/morador/mais" title={config.title} subtitle={config.subtitle} action={config.action} onAction={() => { if (type === 'reservas' && !data.condominium.allowResidentBookings) { flash('Solicitações de reserva estão temporariamente indisponíveis.'); return } setForm(type === 'chamados' ? { location: ownLocation } : {}); setError(''); setOpen(true) }} /><div className="mobile-tabs">{config.tabs.map(([label], index) => <button aria-pressed={tab === index} className={tab === index ? 'active' : ''} onClick={() => setTab(index)} key={label}>{label}</button>)}</div><h3 className="section-label">{config.title}</h3><div className="resident-card-list">{records.map((record) => { const info = summary(record); return <button key={record.id} onClick={() => setDetails(record)}><Icon size={21} /><span><strong>{record.name || record.area || record.title}</strong><small>{info[0]}</small><small>{info[1]}</small><StatusBadge status={record.status}>{info[2]}</StatusBadge></span><ChevronRight size={16} /></button> })}</div>{records.length === 0 && <EmptyState title={emptyMessage(type === 'aprovacoes' ? 'approvals' : collection, emptyFiltered)} onClear={emptyFiltered && tab > 0 ? () => setTab(0) : undefined} />}</section>
+  return <ResidentLayout><section className="resident-page"><ResidentPageHeader backTo="/morador/mais" title={config.title} subtitle={config.subtitle} action={config.action} onAction={() => { if (type === 'reservas' && !data.condominium.allowResidentBookings) { flash('Solicitações de reserva estão temporariamente indisponíveis.'); return } setForm(type === 'chamados' ? { location: ownLocation } : {}); setError(''); setOpen(true) }} /><div className="mobile-tabs">{config.tabs.map(([label], index) => <button aria-pressed={tab === index} className={tab === index ? 'active' : ''} onClick={() => setTab(index)} key={label}>{label}</button>)}</div><h3 className="section-label">{config.title}</h3><div className="resident-card-list">{records.map((record) => { const info = summary(record); return <button key={record.id} onClick={() => openDetails(record)}><Icon size={21} /><span><strong>{record.name || record.area || record.title}</strong><small>{info[0]}</small><small>{info[1]}</small><StatusBadge status={record.status}>{info[2]}</StatusBadge></span><ChevronRight size={16} /></button> })}</div>{records.length === 0 && <EmptyState title={emptyMessage(type === 'aprovacoes' ? 'approvals' : collection, emptyFiltered)} onClear={emptyFiltered && tab > 0 ? () => setTab(0) : undefined} />}</section>
     <Modal open={open} title={config.action} onClose={() => setOpen(false)} onConfirm={save} confirmLabel={busy ? 'Enviando...' : config.action}><DynamicForm fields={fields} values={form} onChange={(key, value) => { setForm((current) => ({ ...current, [key]: value })); setError('') }} error={error} />{availability && error !== availability.message && <p className={availability.available ? 'availability availability--ok' : 'availability availability--error'}>{availability.message}</p>}{approvalNote && <p className="form-note">{approvalNote}</p>}{remoteReservations && type === 'reservas' && !areaOptions.length && <p className="form-note">Nenhuma área comum disponível para reserva no momento.</p>}{type === 'visitantes' && <p className="form-note">Unidade vinculada: {data.currentResident.unit} · {data.currentResident.tower}. Proprietários e inquilinos vinculados podem autorizar.</p>}</Modal>
-    <Modal open={Boolean(details)} title={details ? `Detalhes · ${/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(details.id)) ? details.area || details.name || details.title || '' : details.id}` : 'Detalhes'} onClose={() => setDetails(null)} ><RecordDetails record={details} collection={collection} />{details && type === 'reservas' && canCancel(details) && <div className="detail-actions"><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CANCELADA', label: 'Cancelar reserva' })}>Cancelar reserva</button></div>}{details && type === 'aprovacoes' && details.status === 'AGUARDANDO_APROVACAO' && <div className="detail-actions"><button className="primary-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CONFIRMADA', label: 'Aprovar reserva' })}>Aprovar</button><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'RECUSADA', label: 'Recusar reserva' })}>Recusar</button></div>}</Modal>
+    <Modal open={Boolean(details)} title={details ? `Detalhes · ${/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(details.id)) ? details.area || details.name || details.title || '' : details.id}` : 'Detalhes'} onClose={() => setDetails(null)} ><RecordDetails record={details} collection={collection} />{details && remoteTickets && details.status !== 'ENCERRADO' && <div className="comment-box"><label>Adicionar comentário<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Escreva uma atualização ou pergunta" /></label><button className="secondary-button" disabled={!comment.trim() || busy} onClick={sendComment}>Adicionar comentário</button></div>}{details && type === 'reservas' && canCancel(details) && <div className="detail-actions"><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CANCELADA', label: 'Cancelar reserva' })}>Cancelar reserva</button></div>}{details && type === 'aprovacoes' && details.status === 'AGUARDANDO_APROVACAO' && <div className="detail-actions"><button className="primary-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CONFIRMADA', label: 'Aprovar reserva' })}>Aprovar</button><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'RECUSADA', label: 'Recusar reserva' })}>Recusar</button></div>}</Modal>
     <ConfirmDialog open={Boolean(pending)} title={pending?.label} message={confirmationMessage(pending?.record, pending?.label, pending?.status)} confirmLabel={pending?.label || 'Confirmar'} destructive={['CANCELADA', 'RECUSADA'].includes(pending?.status)} onCancel={() => setPending(null)} onConfirm={confirm} /><div role="status" aria-live="polite" aria-atomic="true">{success && <div className="toast">{success}</div>}</div></ResidentLayout>
 }
 

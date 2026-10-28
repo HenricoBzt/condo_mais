@@ -28,14 +28,16 @@ function loadCards(residentId) {
 
 export default function ResidentDashboard() {
   const navigate = useNavigate()
-  const { data } = useAppData()
+  const { data, remote } = useAppData()
   const resident = data.currentResident
   const [visibleCards, setVisibleCards] = useState(() => loadCards(resident.id))
   const [draftCards, setDraftCards] = useState(visibleCards)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const packageCount = data.packages.filter((item) => sameUnit(item, resident) && item.status === 'AGUARDANDO_RETIRADA').length
   const visitorCount = data.visitors.filter((item) => sameUnit(item, resident) && ['AUTORIZADO', 'ENTROU'].includes(visitorEffectiveStatus(item))).length
-  const ticketCount = data.tickets.filter((item) => sameUnit(item, resident) && !['RESOLVIDO', 'ENCERRADO', 'CANCELADO'].includes(item.status)).length
+  // Na API os chamados já vêm só do morador e da unidade dele (inclusive os de área comum)
+  const remoteTickets = Boolean(remote?.tickets && remote.tickets.status !== 'idle')
+  const ticketCount = data.tickets.filter((item) => (remoteTickets || sameUnit(item, resident)) && !['RESOLVIDO', 'ENCERRADO', 'CANCELADO'].includes(item.status)).length
   const notices = activeNotices(data.notices, resident)
   const noticeCount = notices.length
   const urgentNotice = notices.find((item) => item.priority === 'URGENTE')

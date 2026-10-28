@@ -35,16 +35,38 @@ const reserva = (id, status, extra = {}) => ({
   status, moradorNome: 'Carla', apartamentoNumero: '101', torreNome: 'Torre A', aprovadorNome: null, ...extra,
 })
 
-function fakeApi({ packages = [], packagesStatus = 200, me = { id: 'u-1', nome: 'João', perfil: 'PORTARIA', condominioNome: 'Residencial' }, reservations = [] } = {}) {
+const chamado = (id, status, extra = {}) => ({
+  id, titulo: 'Vazamento na garagem', descricao: 'Perto da vaga 12', prioridade: 'ALTA', status, categoriaId: 'cat-outros', categoriaNome: 'Outros',
+  apartamentoId: null, apartamentoNumero: null, torreNome: null, solicitanteNome: 'Carla', imagemUrl: null, responsavelExterno: null, contatoExterno: null,
+  dataPrevisaoAtendimento: null, dataAbertura: '2026-10-27T09:00:00', dataEncerramento: null, historico: null, ...extra,
+})
+
+function fakeApi({ packages = [], packagesStatus = 200, me = { id: 'u-1', nome: 'João', perfil: 'PORTARIA', condominioNome: 'Residencial' }, reservations = [], tickets = [] } = {}) {
   const calls = []
   let list = [...packages]
   let bookings = [...reservations]
+  let ticketList = [...tickets]
+  const history = { 'c-1': [{ acao: 'ABERTURA', comentario: 'Chamado aberto no sistema.', dataHora: '2026-10-27T09:00:00', usuarioNome: 'Carla' }] }
   globalThis.fetch = async (url, init = {}) => {
     const path = new URL(url).pathname
     const method = init.method || 'GET'
     calls.push({ method, path, body: init.body ? JSON.parse(init.body) : undefined })
     const reply = (status, body) => ({ ok: status < 400, status, json: async () => body, text: async () => (body === undefined ? '' : JSON.stringify(body)) })
     if (path === '/usuarios/me') return reply(200, me)
+    if (path === '/atendimento/categorias') return reply(200, [{ id: 'cat-eletrica', nome: 'Elétrica' }, { id: 'cat-outros', nome: 'Outros' }])
+    if (path === '/atendimento/chamados' && method === 'GET') return reply(200, ticketList)
+    if (path === '/atendimento/chamados' && method === 'POST') { ticketList = [chamado('c-new', 'ABERTO'), ...ticketList]; return reply(200, ticketList[0]) }
+    const ticketMatch = path.match(/^\/atendimento\/chamados\/([^/]+)(\/comentarios)?$/)
+    if (ticketMatch) {
+      const [, id, isComment] = ticketMatch
+      const body = init.body ? JSON.parse(init.body) : {}
+      if (method === 'PUT') {
+        ticketList = ticketList.map((item) => item.id === id ? { ...item, ...(body.status ? { status: body.status.replace('_', ' ') } : {}), ...(body.categoriaId ? { categoriaId: body.categoriaId, categoriaNome: 'Elétrica' } : {}) } : item)
+        history[id] = [...(history[id] || []), { acao: body.status ? `STATUS: -> ${body.status}` : 'CATEGORIA: Outros -> Elétrica', comentario: body.comentario, dataHora: '2026-10-27T10:00:00', usuarioNome: 'Admin' }]
+      }
+      if (isComment) history[id] = [...(history[id] || []), { acao: 'COMENTARIO', comentario: body.comentario, dataHora: '2026-10-27T11:00:00', usuarioNome: me.nome }]
+      return reply(200, { ...ticketList.find((item) => item.id === id), historico: history[id] || [] })
+    }
     if (path === '/condominios/areas-comuns') return reply(200, [
       { id: 'ar-salao', nome: 'Salão de Festas', reservavel: true, exigeAprovacao: true, ativo: true },
       { id: 'ar-piscina', nome: 'Piscina', reservavel: false, exigeAprovacao: false, ativo: true },
@@ -186,4 +208,62 @@ test('aprovar e cancelar reservas passam pelas rotas do backend', async () => {
   assert.ok(calls.some((call) => call.method === 'PUT' && call.path === '/interativo/reservas/r-1/aprovar'))
   assert.ok(calls.some((call) => call.method === 'PUT' && call.path === '/interativo/reservas/r-2/cancelar'))
   await waitFor(() => assert.deepEqual(state.data.reservations.map((item) => item.status), ['CONFIRMADA', 'CANCELADA']))
+})
+
+const admin = { id: 'u-adm', nome: 'Admin', perfil: 'ADMIN', configuracaoInicial: 'CONCLUIDA', condominioNome: 'Residencial' }
+
+test('tela de chamados do admin: histórico no detalhe, recategorização, status e comentário pela API', async () => {
+  const calls = fakeApi({ me: admin, tickets: [chamado('c-1', 'ABERTO')] })
+  sessionStorage.setItem('condoplus.token', jwt({ perfil: 'ADMIN', condominio_id: 'c-1', exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const { fireEvent } = await import('@testing-library/react')
+  const { MemoryRouter } = await import('react-router-dom')
+  const { default: EntityPage } = await server.ssrLoadModule('/src/pages/desktop/EntityPage.jsx')
+  const view = render(React.createElement(AppDataProvider, null, React.createElement(MemoryRouter, null, React.createElement(EntityPage, { role: 'admin', type: 'chamadosAdmin' }))))
+
+  assert.ok(await view.findByText('Vazamento na garagem'))
+  assert.ok(view.getByText('#C-1'))
+  fireEvent.click(view.getByRole('button', { name: 'Ver detalhes' }))
+  assert.ok(await view.findByText('Chamado aberto no sistema.', { exact: false }))
+  // A prioridade não é editável na API; a categoria sim
+  assert.equal(view.queryByLabelText('Prioridade do chamado'), null)
+  fireEvent.change(view.getByLabelText('Categoria do chamado'), { target: { value: 'Elétrica' } })
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'PUT' && call.body?.categoriaId === 'cat-eletrica')))
+  assert.ok(await view.findByText('CATEGORIA: Outros -> Elétrica'))
+
+  fireEvent.click(view.getAllByRole('button', { name: 'Em análise' }).at(-1))
+  fireEvent.click(view.getAllByRole('button', { name: 'Alterar para Em análise' }).at(-1))
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'PUT' && call.body?.status === 'EM_ANALISE')))
+
+  fireEvent.change(view.getByPlaceholderText('Descreva a atualização'), { target: { value: 'Técnico chamado' } })
+  fireEvent.click(view.getByRole('button', { name: 'Adicionar comentário' }))
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'POST' && call.path === '/atendimento/chamados/c-1/comentarios' && call.body.comentario === 'Técnico chamado')))
+  assert.ok(await view.findByText('Técnico chamado', { exact: false }))
+})
+
+test('tela de chamados do morador: vê os de área comum, abre chamado sem categoria e comenta', async () => {
+  const calls = fakeApi({ me: morador, tickets: [chamado('c-1', 'ABERTO')] })
+  sessionStorage.setItem('condoplus.token', jwt({ perfil: 'MORADOR', condominio_id: 'c-1', exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const { fireEvent } = await import('@testing-library/react')
+  const { MemoryRouter } = await import('react-router-dom')
+  const { ResidentListPage } = await server.ssrLoadModule('/src/pages/morador/ResidentPages.jsx')
+  const view = render(React.createElement(AppDataProvider, null, React.createElement(MemoryRouter, null, React.createElement(ResidentListPage, { type: 'chamados' }))))
+
+  // Chamado de área comum (sem unidade) aparece para quem abriu
+  assert.ok(await view.findByText('Vazamento na garagem'))
+  fireEvent.click(view.getByRole('button', { name: /Abrir chamado/ }))
+  assert.deepEqual([...view.getByLabelText(/^Local/).querySelectorAll('option')].map((option) => option.textContent), ['Selecione', '101 · Torre A', 'Área comum / condomínio'])
+  fireEvent.change(view.getByLabelText(/^Título/), { target: { value: 'Portão rangendo' } })
+  fireEvent.change(view.getByLabelText(/^Descrição/), { target: { value: 'Portão da garagem' } })
+  fireEvent.change(view.getByLabelText(/^Local/), { target: { value: '101 · Torre A' } })
+  fireEvent.change(view.getByLabelText(/^Prioridade/), { target: { value: 'NORMAL' } })
+  fireEvent.click(view.getAllByRole('button', { name: /Abrir chamado/ }).at(-1))
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'POST' && call.path === '/atendimento/chamados')))
+  assert.deepEqual(calls.find((call) => call.method === 'POST' && call.path === '/atendimento/chamados').body,
+    { titulo: 'Portão rangendo', descricao: 'Portão da garagem', categoriaId: null, apartamentoId: 'a-101', prioridade: 'NORMAL', imagemUrl: null })
+
+  fireEvent.click((await view.findAllByText('Vazamento na garagem')).at(-1))
+  assert.ok(await view.findByText('Chamado aberto no sistema.', { exact: false }))
+  fireEvent.change(view.getByPlaceholderText('Escreva uma atualização ou pergunta'), { target: { value: 'Alguma previsão?' } })
+  fireEvent.click(view.getByRole('button', { name: 'Adicionar comentário' }))
+  await waitFor(() => assert.ok(calls.some((call) => call.path === '/atendimento/chamados/c-1/comentarios' && call.body.comentario === 'Alguma previsão?')))
 })
