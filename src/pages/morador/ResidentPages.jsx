@@ -97,6 +97,7 @@ function ResidentListModule({ type }) {
   // Com a API ligada, reservas usam as áreas do condomínio e a agenda real (/ocupacao)
   const remoteReservations = Boolean(remote?.reservations && remote.reservations.status !== 'idle') && ['reservas', 'aprovacoes'].includes(type)
   const remoteTickets = Boolean(remote?.tickets && remote.tickets.status !== 'idle') && type === 'chamados'
+  const remoteVisitors = Boolean(remote?.visitors && remote.visitors.status !== 'idle') && type === 'visitantes'
   const [comment, setComment] = useState('')
   const areaOptions = bookableAreas(data.areas || [])
   const selectedArea = areaOptions.find((area) => area.name === form.area)
@@ -146,11 +147,24 @@ function ResidentListModule({ type }) {
     const missing = fields.find((field) => field.required && !String(form[field.key] || '').trim())
     if (missing) { setError(`Preencha o campo “${missing.label}”.`); return }
     if (type === 'visitantes') {
-      if (!visitantesService.podeAutorizar(data.residents, data.currentResident)) { setError('Seu perfil não possui vínculo ativo com esta unidade.'); return }
+      // Na API quem confere o vínculo com a unidade é o servidor (o morador não recebe a lista de moradores)
+      if (!remoteVisitors && !visitantesService.podeAutorizar(data.residents, data.currentResident)) { setError('Seu perfil não possui vínculo ativo com esta unidade.'); return }
       const periodError = authorizationPeriodError(form) || basicValidation(form)
       if (periodError) { setError(periodError); return }
     }
     if (type === 'reservas' && !availability?.available) { setError(availability?.message || 'Verifique a disponibilidade.'); return }
+    if (remoteVisitors) {
+      setBusy(true)
+      try {
+        await actions.saveVisitorRemote(form, true)
+        setOpen(false); setForm({}); flash('Visitante autorizado com sucesso.')
+      } catch (saveError) {
+        setError(saveError.message)
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
     if (remoteTickets) {
       setBusy(true)
       try {
@@ -182,6 +196,19 @@ function ResidentListModule({ type }) {
     setOpen(false); setForm({}); flash(type === 'visitantes' ? 'Visitante autorizado com sucesso.' : type === 'reservas' ? 'Reserva criada com sucesso.' : 'Chamado aberto com sucesso.')
   }
   async function confirm() {
+    if (remoteVisitors && pending.kind === 'visitor') {
+      if (busy) return
+      setBusy(true)
+      try {
+        await actions.setVisitorStatusRemote(pending.record.id, pending.status)
+        flash(pending.status === 'AUTORIZADO' ? 'Visita autorizada.' : 'Autorização recusada.')
+      } catch (actionError) {
+        flash(actionError.message)
+      } finally {
+        setBusy(false); setDetails(null); setPending(null)
+      }
+      return
+    }
     if (remoteReservations && pending.kind === 'reservation') {
       if (busy) return
       setBusy(true)
@@ -231,8 +258,8 @@ function ResidentListModule({ type }) {
   const Icon = config.icon
   return <ResidentLayout><section className="resident-page"><ResidentPageHeader backTo="/morador/mais" title={config.title} subtitle={config.subtitle} action={config.action} onAction={() => { if (type === 'reservas' && !data.condominium.allowResidentBookings) { flash('Solicitações de reserva estão temporariamente indisponíveis.'); return } setForm(type === 'chamados' ? { location: ownLocation } : {}); setError(''); setOpen(true) }} /><div className="mobile-tabs">{config.tabs.map(([label], index) => <button aria-pressed={tab === index} className={tab === index ? 'active' : ''} onClick={() => setTab(index)} key={label}>{label}</button>)}</div><h3 className="section-label">{config.title}</h3><div className="resident-card-list">{records.map((record) => { const info = summary(record); return <button key={record.id} onClick={() => openDetails(record)}><Icon size={21} /><span><strong>{record.name || record.area || record.title}</strong><small>{info[0]}</small><small>{info[1]}</small><StatusBadge status={record.status}>{info[2]}</StatusBadge></span><ChevronRight size={16} /></button> })}</div>{records.length === 0 && <EmptyState title={emptyMessage(type === 'aprovacoes' ? 'approvals' : collection, emptyFiltered)} onClear={emptyFiltered && tab > 0 ? () => setTab(0) : undefined} />}</section>
     <Modal open={open} title={config.action} onClose={() => setOpen(false)} onConfirm={save} confirmLabel={busy ? 'Enviando...' : config.action}><DynamicForm fields={fields} values={form} onChange={(key, value) => { setForm((current) => ({ ...current, [key]: value })); setError('') }} error={error} />{availability && error !== availability.message && <p className={availability.available ? 'availability availability--ok' : 'availability availability--error'}>{availability.message}</p>}{approvalNote && <p className="form-note">{approvalNote}</p>}{remoteReservations && type === 'reservas' && !areaOptions.length && <p className="form-note">Nenhuma área comum disponível para reserva no momento.</p>}{type === 'visitantes' && <p className="form-note">Unidade vinculada: {data.currentResident.unit} · {data.currentResident.tower}. Proprietários e inquilinos vinculados podem autorizar.</p>}</Modal>
-    <Modal open={Boolean(details)} title={details ? `Detalhes · ${/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(details.id)) ? details.area || details.name || details.title || '' : details.id}` : 'Detalhes'} onClose={() => setDetails(null)} ><RecordDetails record={details} collection={collection} />{details && remoteTickets && details.status !== 'ENCERRADO' && <div className="comment-box"><label>Adicionar comentário<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Escreva uma atualização ou pergunta" /></label><button className="secondary-button" disabled={!comment.trim() || busy} onClick={sendComment}>Adicionar comentário</button></div>}{details && type === 'reservas' && canCancel(details) && <div className="detail-actions"><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CANCELADA', label: 'Cancelar reserva' })}>Cancelar reserva</button></div>}{details && type === 'aprovacoes' && details.status === 'AGUARDANDO_APROVACAO' && <div className="detail-actions"><button className="primary-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CONFIRMADA', label: 'Aprovar reserva' })}>Aprovar</button><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'RECUSADA', label: 'Recusar reserva' })}>Recusar</button></div>}</Modal>
-    <ConfirmDialog open={Boolean(pending)} title={pending?.label} message={confirmationMessage(pending?.record, pending?.label, pending?.status)} confirmLabel={pending?.label || 'Confirmar'} destructive={['CANCELADA', 'RECUSADA'].includes(pending?.status)} onCancel={() => setPending(null)} onConfirm={confirm} /><div role="status" aria-live="polite" aria-atomic="true">{success && <div className="toast">{success}</div>}</div></ResidentLayout>
+    <Modal open={Boolean(details)} title={details ? `Detalhes · ${/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(details.id)) ? details.area || details.name || details.title || '' : details.id}` : 'Detalhes'} onClose={() => setDetails(null)} ><RecordDetails record={details} collection={collection} />{details && remoteVisitors && details.status === 'PENDENTE' && <div className="detail-actions"><button className="primary-button" onClick={() => setPending({ kind: 'visitor', record: details, status: 'AUTORIZADO', label: 'Autorizar visita' })}>Autorizar</button><button className="danger-button" onClick={() => setPending({ kind: 'visitor', record: details, status: 'RECUSADO', label: 'Recusar visita' })}>Recusar</button></div>}{details && remoteVisitors && details.status === 'AUTORIZADO' && <div className="detail-actions"><button className="danger-button" onClick={() => setPending({ kind: 'visitor', record: details, status: 'RECUSADO', label: 'Revogar autorização' })}>Revogar autorização</button></div>}{details && remoteTickets && details.status !== 'ENCERRADO' && <div className="comment-box"><label>Adicionar comentário<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Escreva uma atualização ou pergunta" /></label><button className="secondary-button" disabled={!comment.trim() || busy} onClick={sendComment}>Adicionar comentário</button></div>}{details && type === 'reservas' && canCancel(details) && <div className="detail-actions"><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CANCELADA', label: 'Cancelar reserva' })}>Cancelar reserva</button></div>}{details && type === 'aprovacoes' && details.status === 'AGUARDANDO_APROVACAO' && <div className="detail-actions"><button className="primary-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CONFIRMADA', label: 'Aprovar reserva' })}>Aprovar</button><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'RECUSADA', label: 'Recusar reserva' })}>Recusar</button></div>}</Modal>
+    <ConfirmDialog open={Boolean(pending)} title={pending?.label} message={confirmationMessage(pending?.record, pending?.label, pending?.status)} confirmLabel={pending?.label || 'Confirmar'} destructive={['CANCELADA', 'RECUSADA', 'RECUSADO'].includes(pending?.status)} onCancel={() => setPending(null)} onConfirm={confirm} /><div role="status" aria-live="polite" aria-atomic="true">{success && <div className="toast">{success}</div>}</div></ResidentLayout>
 }
 
 export function ProfilePage() {

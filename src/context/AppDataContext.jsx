@@ -12,6 +12,7 @@ import { carregarEncomendas, registrarEncomenda, registrarRetiradaEncomenda } fr
 import { carregarComunicados, excluirComunicado, salvarComunicado } from '../services/comunicadosApi'
 import { alterarStatusReserva, carregarAreasComuns, carregarReservas, solicitarReserva } from '../services/reservasApi'
 import { abrirChamado, atualizarChamado, carregarCategoriasChamado, carregarChamado, carregarChamados, comentarChamado } from '../services/chamadosApi'
+import { alterarStatusVisita, cadastrarVisita, carregarVisitas } from '../services/visitasApi'
 import { prestadoresService } from '../services/prestadoresService'
 import { reservasService } from '../services/reservasService'
 import { nowLabel, todayIso } from '../services/serviceUtils'
@@ -21,7 +22,7 @@ const AppDataContext = createContext(null)
 
 // Módulos operacionais já ligados à API: cada coleção carrega em separado, e a falha de uma
 // não derruba as outras nem os cadastros
-const operationalLoaders = { packages: carregarEncomendas, notices: carregarComunicados, reservations: carregarReservas, areas: carregarAreasComuns, tickets: carregarChamados, ticketCategories: carregarCategoriasChamado }
+const operationalLoaders = { packages: carregarEncomendas, notices: carregarComunicados, reservations: carregarReservas, areas: carregarAreasComuns, tickets: carregarChamados, ticketCategories: carregarCategoriasChamado, visitors: carregarVisitas }
 const operationalKeys = Object.keys(operationalLoaders)
 
 function historyEntry(type, reference, unit, user = 'João Oliveira') {
@@ -189,6 +190,8 @@ export function AppDataProvider({ children }) {
     openTicketRemote: (form) => collectionCommand('tickets', () => abrirChamado(form, { units: dataRef.current.units, categories: dataRef.current.ticketCategories })),
     updateTicketRemote: (id, patch) => collectionCommand('tickets', () => atualizarChamado(id, patch)),
     commentTicketRemote: (id, comment) => collectionCommand('tickets', () => comentarChamado(id, comment)),
+    saveVisitorRemote: (form, asResident = false) => collectionCommand('visitors', () => cadastrarVisita(form, { units: dataRef.current.units, asResident })),
+    setVisitorStatusRemote: (id, status) => collectionCommand('visitors', () => alterarStatusVisita(id, status)),
     // Detalhe com histórico: não altera a lista, só devolve o chamado completo para o modal
     loadTicketDetail: (id) => carregarChamado(id),
     addVisitor(payload, source = 'PORTARIA') {

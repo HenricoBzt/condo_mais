@@ -11,12 +11,12 @@ const labels = {
   area: 'Área comum', requestedByOwner: 'Solicitação feita por proprietário', isOwner: 'É proprietário',
   authorized: 'Autorização prévia', title: 'Título', content: 'Conteúdo', priority: 'Prioridade',
   destination: 'Destino', description: 'Descrição', category: 'Categoria', openedAt: 'Aberto em',
-  type: 'Operação', reference: 'Referência', user: 'Registrado por', timestamp: 'Data e hora do evento', author: 'Publicado por', approvedBy: 'Aprovada / recusada por',
+  type: 'Operação', reference: 'Referência', user: 'Registrado por', timestamp: 'Data e hora do evento', author: 'Publicado por', approvedBy: 'Aprovada / recusada por', doormanIn: 'Entrada registrada por', doormanOut: 'Saída registrada por',
 }
 
 // Allowlist de apresentação dos mocks atuais, não um DTO definitivo.
 export const detailFields = {
-  visitors: ['id', 'name', 'cpf', 'phone', 'tower', 'unit', 'resident', 'startDate', 'startTime', 'endDate', 'endTime', 'status', 'source', 'entryAt', 'exitAt', 'notes'],
+  visitors: ['id', 'name', 'cpf', 'phone', 'tower', 'unit', 'resident', 'startDate', 'startTime', 'endDate', 'endTime', 'status', 'source', 'entryAt', 'doormanIn', 'exitAt', 'doormanOut', 'notes'],
   providers: ['id', 'name', 'cpf', 'company', 'service', 'tower', 'location', 'date', 'time', 'status', 'entryAt', 'exitAt', 'notes'],
   packages: ['code', 'resident', 'tower', 'unit', 'receivedAt', 'doorman', 'status', 'withdrawnAt', 'withdrawnBy', 'notes'],
   reservations: ['id', 'area', 'resident', 'tower', 'unit', 'date', 'startTime', 'endTime', 'status', 'requestedByOwner', 'approvedBy', 'notes'],
