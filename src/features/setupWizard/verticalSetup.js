@@ -154,6 +154,44 @@ export function summarizeTowerUnits(tower, { maxFloors = 5, maxUnitsPerFloor = 8
   }
 }
 
+// Todos os andares da torre, do primeiro ao último, com os números de cada um (prévia 3D)
+export function getTowerFloors(tower) {
+  const values = towerNumbers(tower)
+  if (!values || values.total > SETUP_LIMITS.totalUnits) return []
+  return Array.from({ length: values.floorCount }, (_, offset) => {
+    const floor = values.firstFloor + offset
+    return { floor, numbers: Array.from({ length: values.unitsPerFloor }, (_, unit) => unitNumber(tower, floor, values.firstUnit + unit)) }
+  })
+}
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+
+// Medidas do prédio da prévia 3D. Cabe num palco de ~380px de altura e ~300px de largura para qualquer
+// configuração permitida (até 100 andares x 100 por andar): andares e janelas encolhem, e os números
+// só aparecem nas janelas quando há espaço para ler.
+export function buildingGeometry(floorCount, unitsPerFloor) {
+  const floors = clamp(strictInteger(floorCount) || 1, 1, SETUP_LIMITS.floorCount)
+  const perFloor = clamp(strictInteger(unitsPerFloor) || 1, 1, SETUP_LIMITS.unitsPerFloor)
+  const floorHeight = clamp(Math.floor(380 / (floors + 1.6)), 3, 30)
+  const cell = clamp(Math.floor(280 / perFloor), 3, 46)
+  const pad = 10
+  const gap = floorHeight >= 16 ? 5 : floorHeight >= 8 ? 2 : 1
+  const rowPad = floorHeight >= 16 ? 4 : floorHeight >= 8 ? 2 : 0
+  const width = perFloor * cell + pad * 2
+  const sideWindows = clamp(Math.ceil(perFloor / 2), 1, 6)
+  const depth = clamp(sideWindows * Math.max(cell, 20) + pad * 2, 70, Math.max(width, 70))
+  const parapet = 10
+  const lobby = clamp(Math.round(floorHeight * 1.6), 20, 42)
+  return {
+    floors, perFloor, floorHeight, cell, pad, gap, rowPad, width, depth, parapet, lobby, sideWindows,
+    height: parapet + floors * floorHeight + lobby,
+    showLabels: floorHeight >= 17 && cell >= 30,
+    labelSize: clamp(Math.floor(Math.min(floorHeight * 0.48, cell * 0.27)), 8, 11),
+    // Janelas individuais só enquanto o DOM fica leve; acima disso cada andar vira uma faixa desenhada por CSS
+    detailedWindows: floors * perFloor <= 1200,
+  }
+}
+
 export function summarizeUnitsByFloor(units, { maxFloors = 5, maxUnitsPerFloor = 8 } = {}) {
   const groups = [...units.reduce((map, unit) => {
     if (!map.has(unit.floor)) map.set(unit.floor, [])
