@@ -3,9 +3,9 @@ import { initialAppData } from '../mocks/appData'
 import { apiEnabled, getToken } from '../services/api'
 import { loadSessionBeforeOperational } from '../features/session/sessionAccess'
 import { notifySessionChanged } from '../services/sessionEvents'
-import { alterarStatusMorador, carregarCadastros, carregarUsuarioLogado, criarTorre, excluirUnidade, salvarMorador, salvarUnidade } from '../services/cadastrosApi'
+import { alterarStatusMorador, carregarCadastros, carregarUsuarioLogado, criarTorre, excluirUnidade, salvarMorador, salvarUnidade, salvarUsuarioEquipe } from '../services/cadastrosApi'
 import { avisosService } from '../services/avisosService'
-import { moradoresService, unidadesService } from '../services/cadastrosService'
+import { equipeService, moradoresService, unidadesService } from '../services/cadastrosService'
 import { chamadosService } from '../services/chamadosService'
 import { encomendasService } from '../services/encomendasService'
 import { carregarEncomendas, registrarEncomenda, registrarRetiradaEncomenda } from '../services/encomendasApi'
@@ -38,7 +38,7 @@ export const apiInitialData = {
   ...initialAppData,
   currentResident: emptyResident,
   condominium: { ...initialAppData.condominium, name: '' },
-  towers: [], units: [], residents: [],
+  towers: [], units: [], residents: [], staff: [],
   visitors: [], providers: [], packages: [], reservations: [], notices: [], tickets: [], history: [], notifications: [], areas: [], ticketCategories: [],
 }
 
@@ -46,7 +46,7 @@ export function AppDataProvider({ children }) {
   const [data, setData] = useState(() => apiEnabled() ? apiInitialData : initialAppData)
   // Coleções que vêm da API (cadastros): status idle (mock) | loading | success | error
   const initialRemote = { status: apiEnabled() ? 'loading' : 'idle', error: '' }
-  const [remote, setRemote] = useState({ units: initialRemote, residents: initialRemote, ...Object.fromEntries(operationalKeys.map((key) => [key, initialRemote])) })
+  const [remote, setRemote] = useState({ units: initialRemote, residents: initialRemote, staff: initialRemote, ...Object.fromEntries(operationalKeys.map((key) => [key, initialRemote])) })
   const cadastrosRequest = useRef(0)
   const operationalRequests = useRef(Object.fromEntries(operationalKeys.map((key) => [key, 0])))
   const sessionRequest = useRef(0)
@@ -55,7 +55,7 @@ export function AppDataProvider({ children }) {
   dataRef.current = data
 
   const actions = useMemo(() => {
-    const setCadastrosStatus = (state) => setRemote((current) => ({ ...current, units: state, residents: state }))
+    const setCadastrosStatus = (state) => setRemote((current) => ({ ...current, units: state, residents: state, staff: state }))
     const setCollectionStatus = (key, state) => setRemote((current) => ({ ...current, [key]: state }))
 
     const authorizationIsCurrent = (authorization) => authorization.allowed
@@ -69,9 +69,9 @@ export function AppDataProvider({ children }) {
       const request = ++cadastrosRequest.current
       if (!silent) setCadastrosStatus({ status: 'loading', error: '' })
       try {
-        const { towers, units, residents } = await carregarCadastros()
+        const { towers, units, residents, staff } = await carregarCadastros()
         if (request !== cadastrosRequest.current || !authorizationIsCurrent(authorization)) return
-        setData((current) => ({ ...current, towers, units, residents }))
+        setData((current) => ({ ...current, towers, units, residents, staff }))
         setCadastrosStatus({ status: 'success', error: '' })
       } catch (error) {
         if (request !== cadastrosRequest.current || !authorizationIsCurrent(authorization)) return
@@ -121,7 +121,7 @@ export function AppDataProvider({ children }) {
         ...current,
         currentResident: emptyResident,
         condominium: { ...current.condominium, name: '' },
-        towers: [], units: [], residents: [],
+        towers: [], units: [], residents: [], staff: [],
         ...Object.fromEntries(operationalKeys.map((key) => [key, []])),
       }))
       setCadastrosStatus({ status: 'loading', error: '' })
@@ -182,6 +182,8 @@ export function AppDataProvider({ children }) {
     deleteUnitRemote: (id) => command(() => excluirUnidade(id)),
     saveResidentRemote: (form, editingId) => command(() => salvarMorador(form, editingId, dataRef.current.units)),
     setResidentStatusRemote: (id, status) => command(() => alterarStatusMorador(id, status)),
+    saveStaffRemote: (form, editingId) => command(() => salvarUsuarioEquipe(form, editingId)),
+    setStaffStatusRemote: (id, status) => command(() => alterarStatusMorador(id, status)),
     addPackageRemote: (form) => collectionCommand('packages', () => registrarEncomenda(form, dataRef.current.units)),
     withdrawPackageRemote: (id) => collectionCommand('packages', () => registrarRetiradaEncomenda(id)),
     saveNoticeRemote: (form, editingId) => collectionCommand('notices', () => salvarComunicado(form, editingId, dataRef.current.towers)),
@@ -237,6 +239,8 @@ export function AppDataProvider({ children }) {
     updateTicket(id, patch) { setData((current) => ({ ...current, tickets: chamadosService.atualizar(current.tickets, id, patch) })) },
     addResident(payload) { setData((current) => { const result = moradoresService.criar(current.residents, payload); return { ...current, residents: result.records } }) },
     updateResident(id, patch) { setData((current) => ({ ...current, residents: moradoresService.atualizar(current.residents, id, patch) })) },
+    addStaff(payload) { setData((current) => ({ ...current, staff: equipeService.criar(current.staff || [], payload).records })) },
+    updateStaff(id, patch) { setData((current) => ({ ...current, staff: equipeService.atualizar(current.staff || [], id, patch) })) },
     addArea(payload) { setData((current) => ({ ...current, areas: areasService.criar(current.areas || [], payload).records })) },
     updateArea(id, patch) { setData((current) => ({ ...current, areas: areasService.atualizar(current.areas || [], id, patch) })) },
     addUnit(payload) { setData((current) => { const result = unidadesService.criar(current.units, payload); return { ...current, units: result.records } }) },

@@ -28,7 +28,7 @@ export function nowLabel() {
 }
 
 export function statusLabel(value = '') {
-  const labels = { EM_ANALISE: 'Em análise', EM_ATENDIMENTO: 'Em atendimento', AGUARDANDO_APROVACAO: 'Aguardando aprovação', AGUARDANDO_RETIRADA: 'Aguardando retirada', CONCLUIDA: 'Concluída', PROPRIETARIO: 'Proprietário', INQUILINO: 'Inquilino', MORADOR: 'Morador', PORTARIA: 'Portaria' }
+  const labels = { EM_ANALISE: 'Em análise', EM_ATENDIMENTO: 'Em atendimento', AGUARDANDO_APROVACAO: 'Aguardando aprovação', AGUARDANDO_RETIRADA: 'Aguardando retirada', CONCLUIDA: 'Concluída', PROPRIETARIO: 'Proprietário', INQUILINO: 'Inquilino', MORADOR: 'Morador', PORTARIA: 'Portaria', ADMIN: 'Administração' }
   return labels[value] || String(value).replaceAll('_', ' ').toLowerCase().replace(/^\S/, (letter) => letter.toUpperCase())
 }
 

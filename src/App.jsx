@@ -50,6 +50,7 @@ export default function App() {
       <Route element={<SessionAccessGate area={SESSION_AREA.ADMIN} />}>
         <Route path="/admin" element={<DesktopDashboard role="admin" />} />
         <Route path="/admin/moradores" element={<EntityPage role="admin" type="moradores" />} />
+        <Route path="/admin/equipe" element={<EntityPage role="admin" type="equipe" />} />
         <Route path="/admin/unidades" element={<EntityPage role="admin" type="unidades" />} />
         <Route path="/admin/encomendas" element={<EntityPage role="admin" type="encomendasAdmin" />} />
         <Route path="/admin/reservas" element={<EntityPage role="admin" type="reservas" />} />

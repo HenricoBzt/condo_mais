@@ -41,6 +41,12 @@ export const entityConfigs = {
     columns: [['Morador', 'name', 'cpf'], ['Unidade', 'unit', 'tower'], ['Vínculo', 'relation'], ['Contato', 'email', 'phone'], ['Status', 'status']],
     fields: [{ key: 'name', label: 'Nome', required: true }, { key: 'cpf', label: 'CPF', required: true }, { key: 'email', label: 'E-mail', type: 'email', required: true }, { key: 'phone', label: 'Telefone', required: true }, { key: 'tower', label: 'Torre / Bloco', type: 'select', options: towers.slice(0, 3), required: true }, { key: 'unit', label: 'Unidade', required: true }, { key: 'relation', label: 'Vínculo com a unidade', type: 'select', options: ['PROPRIETARIO', 'INQUILINO'], required: true }],
   },
+  equipe: {
+    collection: 'staff', title: 'Equipe', subtitle: 'Cadastre os usuários da portaria e da administração. Eles entram com o CPF e criam a senha no primeiro acesso.', action: 'Cadastrar usuário', empty: 'Nenhum usuário encontrado.',
+    tabs: [['Todos', []], ['Portaria', ['PORTARIA'], 'role'], ['Administração', ['ADMIN'], 'role'], ['Ativos', ['ATIVO']], ['Inativos', ['INATIVO']]],
+    columns: [['Usuário', 'name', 'cpf'], ['Perfil', 'role'], ['Contato', 'email', 'phone'], ['Status', 'status']],
+    fields: [{ key: 'name', label: 'Nome', required: true }, { key: 'cpf', label: 'CPF', required: true }, { key: 'role', label: 'Perfil', type: 'select', options: ['PORTARIA', 'ADMIN'], required: true }, { key: 'email', label: 'E-mail', type: 'email' }, { key: 'phone', label: 'Telefone' }],
+  },
   areasComuns: {
     collection: 'areas', title: 'Áreas comuns', subtitle: 'Cadastre as áreas do condomínio e defina quais podem ser reservadas pelos moradores.', action: 'Nova área comum', empty: 'Nenhuma área comum encontrada.',
     tabs: [['Todas', []], ['Ativas', ['ATIVO']], ['Inativas', ['INATIVO']]],

@@ -38,6 +38,28 @@ export function toResident(usuario) {
   }
 }
 
+// Perfil da equipe (Portaria/Administração); valores legados como "Administrador" ou "Porteiro" contam igual
+export function staffRole(perfil) {
+  const value = String(perfil || '').normalize('NFD').replace(/\p{M}/gu, '').trim().toUpperCase()
+  if (['ADMIN', 'ADMINISTRADOR', 'ADMINISTRACAO'].includes(value)) return 'ADMIN'
+  if (['PORTARIA', 'PORTEIRO'].includes(value)) return 'PORTARIA'
+  return ''
+}
+
+// UsuarioResponseDTO (perfil ADMIN ou PORTARIA) -> usuário da equipe
+export function toStaff(usuario) {
+  return {
+    id: usuario.id,
+    name: usuario.nome || '',
+    cpf: usuario.cpf || '',
+    email: usuario.email || '',
+    phone: usuario.telefone || '',
+    role: staffRole(usuario.perfil),
+    status: usuario.status || 'ATIVO',
+    pendingFirstAccess: Boolean(usuario.primeiroAcessoPendente),
+  }
+}
+
 // Preenche proprietários/moradores de cada unidade a partir dos moradores ativos
 export function linkResidents(units, residents) {
   return units.map((unit) => {
@@ -46,8 +68,8 @@ export function linkResidents(units, residents) {
   })
 }
 
-// Torres, unidades e moradores do condomínio do token. Moradores só vêm para ADMIN (403 para os demais;
-// 404 em backend sem /usuarios).
+// Torres, unidades, moradores e equipe do condomínio do token. Usuários só vêm para ADMIN (403 para os
+// demais; 404 em backend sem /usuarios).
 export async function carregarCadastros(options) {
   const id = condominioId()
   const [torres, apartamentos, usuarios] = await Promise.all([
@@ -59,7 +81,8 @@ export async function carregarCadastros(options) {
   const towerNames = Object.fromEntries(towers.map((tower) => [tower.id, tower.name]))
   const residents = usuarios.filter((usuario) => usuario.perfil === 'MORADOR').map(toResident)
   const units = linkResidents(apartamentos.map((apartamento) => toUnit(apartamento, towerNames)), residents)
-  return { towers, units, residents }
+  const staff = usuarios.filter((usuario) => staffRole(usuario.perfil)).map(toStaff)
+  return { towers, units, residents, staff }
 }
 
 // Usuário logado (GET /usuarios/me, qualquer perfil): monta a área do morador com os dados reais
@@ -95,6 +118,15 @@ export async function salvarMorador(form, editingId, units, options) {
   return editingId ? apiPut(`/usuarios/${editingId}`, body, options) : apiPost('/usuarios', body, options)
 }
 
+// Portaria/Administração: sem unidade nem vínculo; e-mail e telefone são opcionais
+export async function salvarUsuarioEquipe(form, editingId, options) {
+  const perfil = staffRole(form.role)
+  if (!perfil) throw new ApiError(400, 'Selecione o perfil: Portaria ou Administração.')
+  const body = { nome: form.name?.trim(), cpf: form.cpf?.trim(), email: form.email?.trim() || '', telefone: form.phone?.trim() || '', perfil }
+  return editingId ? apiPut(`/usuarios/${editingId}`, body, options) : apiPost('/usuarios', body, options)
+}
+
+// Ativar/desativar vale para qualquer usuário do condomínio (morador ou equipe)
 export function alterarStatusMorador(id, status, options) {
   return apiPut(`/usuarios/${id}/${status === 'INATIVO' ? 'desativar' : 'ativar'}`, undefined, options)
 }

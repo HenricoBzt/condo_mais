@@ -8,6 +8,10 @@ export const initialAppData = {
     { id: 'MOR-004', name: 'Mariana Oliveira', cpf: '741.852.963-36', email: 'mariana@email.com', phone: '(81) 96666-3333', tower: 'Torre C', unit: '402', relation: 'PROPRIETARIO', isOwner: true, status: 'ATIVO' },
     { id: 'MOR-005', name: 'Ricardo Lima', cpf: '159.753.486-54', email: 'ricardo@email.com', phone: '(81) 95555-4444', tower: 'Torre B', unit: '207', relation: 'INQUILINO', isOwner: false, status: 'INATIVO' },
   ],
+  staff: [
+    { id: 'EQP-001', name: 'João Oliveira', cpf: '321.654.987-00', email: 'joao.portaria@email.com', phone: '(81) 94444-5555', role: 'PORTARIA', status: 'ATIVO', pendingFirstAccess: false },
+    { id: 'EQP-002', name: 'Fernanda Rocha', cpf: '852.741.963-11', email: 'fernanda.adm@email.com', phone: '(81) 93333-6666', role: 'ADMIN', status: 'ATIVO', pendingFirstAccess: false },
+  ],
   units: [
     { id: 'UNI-203A', number: '203', tower: 'Torre A', status: 'OCUPADO', owners: ['Carlos Silva'], residents: ['Carlos Silva', 'Mariana Silva'] },
     { id: 'UNI-305B', number: '305', tower: 'Torre B', status: 'OCUPADO', owners: ['Ana Souza'], residents: ['Ana Souza'] },
