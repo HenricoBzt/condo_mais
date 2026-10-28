@@ -407,3 +407,50 @@ test('tela de áreas comuns do admin: cadastra, liga a reserva de uma área exis
   await waitFor(() => assert.ok(calls.some((call) => call.method === 'PUT' && call.path === '/condominios/areas-comuns/ar-salao/desativar')))
   await waitFor(() => assert.ok(view.getAllByText('Inativo').length >= 2))
 })
+
+test('proprietário vê o aviso de aprovação no painel e aprova pelo detalhe em Minhas reservas', async () => {
+  const proprietario = { ...morador, id: 'u-prop', nome: 'Fernandinho', vinculo: 'PROPRIETARIO' }
+  const calls = fakeApi({ me: proprietario, reservations: [reserva('r-1', 'AGUARDANDO APROVACAO', { moradorNome: 'Lucas Marques' })] })
+  sessionStorage.setItem('condoplus.token', jwt({ perfil: 'MORADOR', condominio_id: 'c-1', exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const { fireEvent } = await import('@testing-library/react')
+  const { MemoryRouter, Route, Routes } = await import('react-router-dom')
+  const { default: ResidentDashboard } = await server.ssrLoadModule('/src/pages/morador/ResidentDashboard.jsx')
+  const { ResidentListPage } = await server.ssrLoadModule('/src/pages/morador/ResidentPages.jsx')
+  const view = render(React.createElement(AppDataProvider, null, React.createElement(MemoryRouter, { initialEntries: ['/morador'] },
+    React.createElement(Routes, null,
+      React.createElement(Route, { path: '/morador', element: React.createElement(ResidentDashboard) }),
+      React.createElement(Route, { path: '/morador/aprovacoes', element: React.createElement('div', null, 'Tela de aprovações') }),
+    ))))
+
+  const alert = await view.findByText('1 reserva aguarda sua aprovação')
+  assert.ok(view.getByText(/Salão de Festas · 20\/12 · Lucas Marques/))
+  fireEvent.click(alert)
+  assert.ok(await view.findByText('Tela de aprovações'))
+  cleanup()
+
+  const list = render(React.createElement(AppDataProvider, null, React.createElement(MemoryRouter, null, React.createElement(ResidentListPage, { type: 'reservas' }))))
+  fireEvent.click(await list.findByText('Salão de Festas'))
+  // Não foi ele quem pediu: não cancela, mas aprova ou recusa
+  assert.equal(list.queryByRole('button', { name: 'Cancelar reserva' }), null)
+  fireEvent.click(await list.findByRole('button', { name: 'Aprovar' }))
+  fireEvent.click(list.getAllByRole('button', { name: 'Aprovar reserva' }).at(-1))
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'PUT' && call.path === '/interativo/reservas/r-1/aprovar')))
+})
+
+test('inquilino não vê aviso de aprovação nem botões de aprovar', async () => {
+  const calls = fakeApi({ me: morador, reservations: [reserva('r-1', 'AGUARDANDO APROVACAO', { moradorNome: 'Outro inquilino' })] })
+  sessionStorage.setItem('condoplus.token', jwt({ perfil: 'MORADOR', condominio_id: 'c-1', exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const { fireEvent } = await import('@testing-library/react')
+  const { MemoryRouter } = await import('react-router-dom')
+  const { default: ResidentDashboard } = await server.ssrLoadModule('/src/pages/morador/ResidentDashboard.jsx')
+  const { ResidentListPage } = await server.ssrLoadModule('/src/pages/morador/ResidentPages.jsx')
+  const dash = render(React.createElement(AppDataProvider, null, React.createElement(MemoryRouter, null, React.createElement(ResidentDashboard))))
+  await dash.findByText(/Apartamento 101/)
+  await waitFor(() => assert.ok(calls.some((call) => call.path === '/interativo/reservas')))
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+  assert.equal(dash.queryByText(/aguarda sua aprovação/), null)
+  cleanup()
+  const list = render(React.createElement(AppDataProvider, null, React.createElement(MemoryRouter, null, React.createElement(ResidentListPage, { type: 'reservas' }))))
+  fireEvent.click(await list.findByText('Salão de Festas'))
+  assert.equal(list.queryByRole('button', { name: 'Aprovar' }), null)
+})

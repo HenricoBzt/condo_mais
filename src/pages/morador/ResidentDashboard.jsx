@@ -1,4 +1,4 @@
-import { AlertTriangle, BellRing, CalendarDays, Package, Settings2, UsersRound, Wrench } from 'lucide-react'
+import { AlertTriangle, BellRing, CalendarClock, CalendarDays, Package, Settings2, UsersRound, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Modal from '../../components/Modal'
@@ -41,6 +41,8 @@ export default function ResidentDashboard() {
   const notices = activeNotices(data.notices, resident)
   const noticeCount = notices.length
   const urgentNotice = notices.find((item) => item.priority === 'URGENTE')
+  // Proprietário: reservas da unidade (de inquilinos) esperando a decisão dele
+  const pendingApprovals = resident.isOwner ? data.reservations.filter((item) => sameUnit(item, resident) && item.status === 'AGUARDANDO_APROVACAO') : []
   const nextReservation = futureReservations(data.reservations.filter((item) => sameUnit(item, resident)))[0]
   const cards = [
     { key: 'packages', icon: Package, label: 'Encomendas', value: packageCount, detail: 'aguardando', route: '/morador/comunicados' },
@@ -70,6 +72,7 @@ export default function ResidentDashboard() {
         <h1>Olá, {resident.name.split(' ')[0]}! <span>👋</span></h1>
         <p className="muted">Apartamento {resident.unit} · {resident.tower}</p>
         {urgentNotice && <button className="urgent-alert" onClick={() => navigate(`/morador/comunicados/${encodeURIComponent(urgentNotice.id)}`)}><AlertTriangle /><span><small>Aviso urgente</small><strong>{urgentNotice.title}</strong><em>Ver detalhes →</em></span></button>}
+        {pendingApprovals.length > 0 && <button className="urgent-alert approval-alert" onClick={() => navigate('/morador/aprovacoes')}><CalendarClock /><span><small>Aprovação pendente</small><strong>{pendingApprovals.length === 1 ? '1 reserva aguarda sua aprovação' : `${pendingApprovals.length} reservas aguardam sua aprovação`}</strong><em>{pendingApprovals.length === 1 ? `${pendingApprovals[0].area} · ${pendingApprovals[0].date.slice(8, 10)}/${pendingApprovals[0].date.slice(5, 7)} · ${pendingApprovals[0].resident || 'morador da unidade'} — ` : ''}Analisar →</em></span></button>}
         <div className="dashboard-summary-heading"><h2>Resumo</h2><button className="text-link" onClick={() => { setDraftCards(visibleCards); setSettingsOpen(true) }}><Settings2 size={15} /> Personalizar</button></div>
         <div className="resident-stats">
           {cards.filter((card) => visibleCards.includes(card.key)).map(({ key, icon: Icon, label, value, detail, route }) => <button key={key} onClick={() => navigate(route)}><Icon /><span><small>{label}</small><strong>{value}</strong><em>{detail}</em></span></button>)}
