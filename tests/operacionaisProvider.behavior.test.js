@@ -41,8 +41,16 @@ const chamado = (id, status, extra = {}) => ({
   dataPrevisaoAtendimento: null, dataAbertura: '2026-10-27T09:00:00', dataEncerramento: null, historico: null, ...extra,
 })
 
-function fakeApi({ packages = [], packagesStatus = 200, me = { id: 'u-1', nome: 'João', perfil: 'PORTARIA', condominioNome: 'Residencial' }, reservations = [], tickets = [] } = {}) {
+const visita = (id, status, extra = {}) => ({
+  id, status, origem: 'PORTARIA', visitanteNome: 'Mariana Souza', visitanteCpf: '529.982.247-25', visitanteTelefone: null,
+  apartamentoId: 'a-101', apartamentoNumero: '101', torreNome: 'Torre A', moradorNome: 'Carla',
+  dataInicio: '2026-10-27', horaInicio: '08:00:00', dataFim: '2099-12-31', horaFim: '23:00:00', observacao: null,
+  dataHoraRegistro: '2026-10-27T08:00:00', dataHoraEntrada: null, dataHoraSaida: null, porteiroEntradaNome: null, porteiroSaidaNome: null, ...extra,
+})
+
+function fakeApi({ packages = [], packagesStatus = 200, me = { id: 'u-1', nome: 'João', perfil: 'PORTARIA', condominioNome: 'Residencial' }, reservations = [], tickets = [], visits = [] } = {}) {
   const calls = []
+  let visitList = [...visits]
   let list = [...packages]
   let bookings = [...reservations]
   let ticketList = [...tickets]
@@ -53,6 +61,19 @@ function fakeApi({ packages = [], packagesStatus = 200, me = { id: 'u-1', nome: 
     calls.push({ method, path, body: init.body ? JSON.parse(init.body) : undefined })
     const reply = (status, body) => ({ ok: status < 400, status, json: async () => body, text: async () => (body === undefined ? '' : JSON.stringify(body)) })
     if (path === '/usuarios/me') return reply(200, me)
+    if (path === '/portaria/visitas' && method === 'GET') return reply(200, visitList)
+    if (path === '/portaria/visitas' && method === 'POST') {
+      const body = JSON.parse(init.body)
+      visitList = [visita('v-new', body.autorizado === false ? 'PENDENTE' : 'AUTORIZADO', { visitanteNome: body.nome, origem: body.apartamentoId ? 'PORTARIA' : 'MORADOR' }), ...visitList]
+      return reply(200, visitList[0])
+    }
+    const visitMatch = path.match(/^\/portaria\/visitas\/([^/]+)\/(autorizar|recusar|entrada|saida)$/)
+    if (visitMatch && method === 'PUT') {
+      const [, id, action] = visitMatch
+      const status = { autorizar: 'AUTORIZADO', recusar: 'RECUSADO', entrada: 'ENTROU', saida: 'SAIU' }[action]
+      visitList = visitList.map((item) => item.id === id ? { ...item, status, ...(status === 'ENTROU' ? { dataHoraEntrada: '2026-10-27T10:00:00', porteiroEntradaNome: 'João' } : {}) } : item)
+      return reply(200, visitList.find((item) => item.id === id))
+    }
     if (path === '/atendimento/categorias') return reply(200, [{ id: 'cat-eletrica', nome: 'Elétrica' }, { id: 'cat-outros', nome: 'Outros' }])
     if (path === '/atendimento/chamados' && method === 'GET') return reply(200, ticketList)
     if (path === '/atendimento/chamados' && method === 'POST') { ticketList = [chamado('c-new', 'ABERTO'), ...ticketList]; return reply(200, ticketList[0]) }
@@ -266,4 +287,71 @@ test('tela de chamados do morador: vê os de área comum, abre chamado sem categ
   fireEvent.change(view.getByPlaceholderText('Escreva uma atualização ou pergunta'), { target: { value: 'Alguma previsão?' } })
   fireEvent.click(view.getByRole('button', { name: 'Adicionar comentário' }))
   await waitFor(() => assert.ok(calls.some((call) => call.path === '/atendimento/chamados/c-1/comentarios' && call.body.comentario === 'Alguma previsão?')))
+})
+
+test('tela de visitantes da portaria: registra pela unidade, autoriza, dá entrada e saída pela API', async () => {
+  const calls = fakeApi({ visits: [visita('v-1', 'PENDENTE')] })
+  sessionStorage.setItem('condoplus.token', jwt({ perfil: 'PORTARIA', condominio_id: 'c-1', exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const { fireEvent } = await import('@testing-library/react')
+  const { MemoryRouter } = await import('react-router-dom')
+  const { default: EntityPage } = await server.ssrLoadModule('/src/pages/desktop/EntityPage.jsx')
+  const view = render(React.createElement(AppDataProvider, null, React.createElement(MemoryRouter, null, React.createElement(EntityPage, { role: 'portaria', type: 'visitantesPortaria' }))))
+
+  assert.ok(await view.findByText('Mariana Souza'))
+  fireEvent.click(view.getByRole('button', { name: /Registrar visitante/ }))
+  // O responsável é definido pelo servidor: o campo não aparece
+  assert.equal(view.queryByLabelText(/Morador responsável/), null)
+  fireEvent.change(view.getByLabelText(/^Nome/), { target: { value: 'Pedro Lima' } })
+  fireEvent.change(view.getByLabelText(/^CPF/), { target: { value: '111.444.777-35' } })
+  fireEvent.change(view.getAllByLabelText(/^Torre/).at(-1), { target: { value: 'Torre A' } })
+  fireEvent.change(view.getByLabelText(/^Apartamento/), { target: { value: '101' } })
+  fireEvent.change(view.getByLabelText(/Data de início/), { target: { value: '2099-12-30' } })
+  fireEvent.change(view.getByLabelText(/Horário de início/), { target: { value: '10:00' } })
+  fireEvent.change(view.getByLabelText(/Data de término/), { target: { value: '2099-12-30' } })
+  fireEvent.change(view.getByLabelText(/Horário de término/), { target: { value: '12:00' } })
+  fireEvent.click(view.getByRole('button', { name: 'Salvar' }))
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'POST' && call.path === '/portaria/visitas')))
+  assert.deepEqual(calls.find((call) => call.method === 'POST' && call.path === '/portaria/visitas').body, {
+    cpf: '111.444.777-35', nome: 'Pedro Lima', telefone: null, apartamentoId: 'a-101', moradorId: null,
+    dataInicio: '2099-12-30', horaInicio: '10:00', dataFim: '2099-12-30', horaFim: '12:00', observacao: null, autorizado: false,
+  })
+  assert.ok(await view.findByText('Pedro Lima'))
+
+  // Pendente -> autorizar -> entrada -> saída, cada passo pela rota do backend
+  for (const [button, confirmLabel, route] of [['Autorizar', 'Autorizar', 'autorizar'], ['Registrar entrada', 'Registrar entrada', 'entrada'], ['Registrar saída', 'Registrar saída', 'saida']]) {
+    fireEvent.click(view.getAllByRole('button', { name: 'Ver detalhes' }).at(-1))
+    fireEvent.click(await view.findByRole('button', { name: button }))
+    fireEvent.click(view.getAllByRole('button', { name: confirmLabel }).at(-1))
+    await waitFor(() => assert.ok(calls.some((call) => call.method === 'PUT' && call.path === `/portaria/visitas/v-1/${route}`)))
+    await waitFor(() => assert.equal(view.queryByRole('button', { name: button }), null))
+  }
+})
+
+test('tela de visitantes do morador: autoriza visitante e decide a pendente da unidade', async () => {
+  const calls = fakeApi({ me: morador, visits: [visita('v-1', 'PENDENTE')] })
+  sessionStorage.setItem('condoplus.token', jwt({ perfil: 'MORADOR', condominio_id: 'c-1', exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const { fireEvent } = await import('@testing-library/react')
+  const { MemoryRouter } = await import('react-router-dom')
+  const { ResidentListPage } = await server.ssrLoadModule('/src/pages/morador/ResidentPages.jsx')
+  const view = render(React.createElement(AppDataProvider, null, React.createElement(MemoryRouter, null, React.createElement(ResidentListPage, { type: 'visitantes' }))))
+
+  assert.ok(await view.findByText('Mariana Souza'))
+  fireEvent.click(view.getByRole('button', { name: /Autorizar visitante/ }))
+  fireEvent.change(view.getByLabelText(/^Nome do visitante/), { target: { value: 'Tio João' } })
+  fireEvent.change(view.getByLabelText(/^CPF/), { target: { value: '111.444.777-35' } })
+  fireEvent.change(view.getByLabelText(/Data de início/), { target: { value: '2099-12-30' } })
+  fireEvent.change(view.getByLabelText(/Horário de início/), { target: { value: '10:00' } })
+  fireEvent.change(view.getByLabelText(/Data de término/), { target: { value: '2099-12-30' } })
+  fireEvent.change(view.getByLabelText(/Horário de término/), { target: { value: '12:00' } })
+  fireEvent.click(view.getAllByRole('button', { name: /Autorizar visitante/ }).at(-1))
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'POST' && call.path === '/portaria/visitas')))
+  const body = calls.find((call) => call.method === 'POST' && call.path === '/portaria/visitas').body
+  assert.equal(body.apartamentoId, null)
+  assert.equal(body.autorizado, null)
+  assert.ok(await view.findByText('Tio João'))
+
+  fireEvent.click(view.getByText('Mariana Souza'))
+  fireEvent.click(await view.findByRole('button', { name: 'Autorizar' }))
+  fireEvent.click(view.getAllByRole('button', { name: 'Autorizar visita' }).at(-1))
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'PUT' && call.path === '/portaria/visitas/v-1/autorizar')))
 })

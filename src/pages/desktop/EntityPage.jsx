@@ -82,16 +82,19 @@ function EntityModule({ role, type }) {
   const remoteNotices = remoteMode && config.collection === 'notices'
   const remoteReservations = remoteMode && config.collection === 'reservations'
   const remoteTickets = remoteMode && config.collection === 'tickets'
+  const remoteVisitors = remoteMode && config.collection === 'visitors'
   const ticketCategoryNames = (data.ticketCategories || []).map((category) => category.name)
   // Opções de torre vêm do banco; vínculos da unidade são geridos pelo cadastro de moradores.
   // Encomenda: a unidade é escolhida entre as da torre selecionada; condomínio sem torres não pede torre.
-  const packageUnitOptions = remotePackages
+  const packageUnitOptions = remotePackages || remoteVisitors
     ? (data.units || []).filter((unit) => (unit.tower || '') === (form.tower || '')).map((unit) => unit.number).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))
     : []
   const fields = remoteMode
     ? config.fields
       .filter((field) => !(config.collection === 'units' && ['owner', 'resident'].includes(field.key)))
-      .filter((field) => !(remotePackages && field.key === 'tower' && !towerNames.length))
+      .filter((field) => !((remotePackages || remoteVisitors) && field.key === 'tower' && !towerNames.length))
+      // Visita: o morador responsável é definido pelo servidor (a portaria não lista moradores)
+      .filter((field) => !(remoteVisitors && field.key === 'resident'))
       // Comunicado: publicado na hora (sem data inicial); sem torres, vai sempre para o condomínio todo
       .filter((field) => !(remoteNotices && (field.key === 'startDate' || (!towerNames.length && ['destination', 'tower'].includes(field.key)))))
       // Chamado: o backend não guarda observação; o local é uma unidade ou a área comum
@@ -101,7 +104,7 @@ function EntityModule({ role, type }) {
         if (remoteTickets && field.key === 'location') return { ...field, label: 'Local / unidade', type: 'select', options: [TICKET_COMMON_AREA, ...(data.units || []).map(ticketUnitLabel)] }
         if (remoteNotices && field.key === 'endDate') return { ...field, label: 'Válido até', required: false }
         if (field.key === 'tower') return { ...field, options: towerNames }
-        if (remotePackages && field.key === 'unit') return { ...field, type: 'select', options: packageUnitOptions }
+        if ((remotePackages || remoteVisitors) && field.key === 'unit') return { ...field, type: 'select', options: packageUnitOptions }
         return field
       })
     : config.fields
@@ -133,6 +136,13 @@ function EntityModule({ role, type }) {
   }
 
   async function saveRecord() {
+    if (remoteVisitors) {
+      const validation = validate(fields, form) || basicValidation({ cpf: form.cpf, phone: form.phone }) || (findPackageUnit(data.units, form) ? '' : 'Selecione uma unidade existente nesta Torre / Bloco.')
+      if (validation) { setError(validation); return }
+      const ok = await runRemote(() => actions.saveVisitorRemote(form), setError)
+      if (ok) { setOpen(false); flash(form.authorized ? 'Visitante registrado e autorizado.' : 'Visitante registrado. Aguardando autorização.') }
+      return
+    }
     if (remoteTickets) {
       const validation = validate(fields, form)
       if (validation) { setError(validation); return }
@@ -184,6 +194,14 @@ function EntityModule({ role, type }) {
   function requestAction(action, record, label, status) { setPendingAction({ action, record, label, status }) }
   async function confirmAction() {
     const { action, record, status } = pendingAction
+    if (remoteVisitors && action === 'visitor') {
+      const ok = await runRemote(() => actions.setVisitorStatusRemote(record.id, status), (message) => { setPendingAction(null); flash(message) })
+      if (!ok) return
+      setPendingAction(null)
+      setDetails(null)
+      flash({ AUTORIZADO: 'Visita autorizada.', RECUSADO: 'Visita recusada.', ENTROU: 'Entrada registrada.', SAIU: 'Saída registrada.' }[status] || 'Status atualizado.')
+      return
+    }
     if (remoteTickets && action === 'ticket') {
       const ok = await runRemote(() => actions.updateTicketRemote(record.id, { status }), (message) => { setPendingAction(null); flash(message) })
       if (!ok) return
@@ -260,7 +278,8 @@ function EntityModule({ role, type }) {
 
   function detailActions(record) {
     if (config.collection === 'visitors') {
-      const buttons = record.status === 'PENDENTE' ? [['Autorizar', 'AUTORIZADO'], ['Recusar', 'RECUSADO']] : record.status === 'AUTORIZADO' ? [['Registrar entrada', 'ENTROU']] : record.status === 'ENTROU' ? [['Registrar saída', 'SAIU']] : []
+      // Na API, uma autorização ainda não usada também pode ser revogada (recusada)
+      const buttons = record.status === 'PENDENTE' ? [['Autorizar', 'AUTORIZADO'], ['Recusar', 'RECUSADO']] : record.status === 'AUTORIZADO' ? [['Registrar entrada', 'ENTROU'], ...(remoteVisitors ? [['Revogar autorização', 'RECUSADO']] : [])] : record.status === 'ENTROU' ? [['Registrar saída', 'SAIU']] : []
       return buttons.map(([label, status]) => <button key={status} className={status === 'RECUSADO' ? 'danger-button' : 'primary-button'} onClick={() => requestAction('visitor', record, label, status)}>{label}</button>)
     }
     if (config.collection === 'providers') {
@@ -306,7 +325,7 @@ function EntityModule({ role, type }) {
       <div className="table-wrap"><table><thead><tr>{config.columns.map(([label, key]) => <th className={key === 'status' ? 'status-column' : undefined} key={label}>{label}</th>)}<th className="action-column">Ações</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}>{config.columns.map(([label, key, secondKey], columnIndex) => { const value = cellValue(row, key, secondKey); const badge = key === 'status' || key === 'priority'; return <td className={key === 'status' ? 'status-column' : columnIndex === 0 ? 'identity-column' : undefined} key={label}>{badge ? <StatusBadge status={value.first}>{statusLabel(value.first)}</StatusBadge> : <span className="cell-stack"><strong>{value.first}</strong>{value.second && <small>{value.second}</small>}{columnIndex === 0 && row.status && <span className="compact-row-status"><StatusBadge status={row.status}>{statusLabel(row.status)}</StatusBadge></span>}</span>}</td>})}<td className="action-column"><button className="row-action" onClick={() => openDetails(row)}>Ver detalhes</button></td></tr>)}</tbody></table>{remoteState?.status === 'loading' ? <div className="empty-state" role="status"><strong>Carregando registros...</strong></div> : remoteState?.status === 'error' ? <div className="empty-state" role="alert"><strong>{remoteState.error}</strong><button className="text-link" onClick={() => (['units', 'residents'].includes(config.collection) ? actions.reloadCadastros() : actions.reloadCollection(config.collection))}>Tentar novamente</button></div> : rows.length === 0 && <EmptyState title={emptyMessage(config.collection, Boolean(records.length && hasFilters))} onClear={records.length && hasFilters ? resetFilters : undefined} />}</div>
       <div className="pagination"><span>Mostrando {rows.length} de {records.length} registros</span></div>
     </section>
-    <Modal open={open} title={editing ? `Editar ${config.title.toLowerCase()}` : config.action || 'Novo registro'} onClose={() => setOpen(false)} onConfirm={saveRecord} confirmLabel={busy ? 'Salvando...' : editing ? 'Salvar alterações' : (type.includes('encomendas') ? 'Registrar' : 'Salvar')}><DynamicForm fields={fields} values={form} onChange={(key, value) => { setForm((current) => ({ ...current, [key]: value, ...(remotePackages && key === 'tower' ? { unit: '' } : {}) })); setError('') }} error={error} /></Modal>
+    <Modal open={open} title={editing ? `Editar ${config.title.toLowerCase()}` : config.action || 'Novo registro'} onClose={() => setOpen(false)} onConfirm={saveRecord} confirmLabel={busy ? 'Salvando...' : editing ? 'Salvar alterações' : (type.includes('encomendas') ? 'Registrar' : 'Salvar')}><DynamicForm fields={fields} values={form} onChange={(key, value) => { setForm((current) => ({ ...current, [key]: value, ...((remotePackages || remoteVisitors) && key === 'tower' ? { unit: '' } : {}) })); setError('') }} error={error} /></Modal>
     <Modal open={Boolean(details)} title={details ? `Detalhes · ${details.code || (isUuid(details.id) ? details.title || details.name || '' : details.id)}` : 'Detalhes'} onClose={() => setDetails(null)} ><RecordDetails record={details} collection={config.collection} />{details && <div className="detail-actions">{detailActions(details)}</div>}{details && config.collection === 'tickets' && !(remoteTickets && details.status === 'ENCERRADO') && <div className="comment-box"><label>Adicionar comentário<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Descreva a atualização" /></label><button className="secondary-button" disabled={!comment.trim() || busy} onClick={() => { if (remoteTickets) { addRemoteComment(); return } actions.updateTicket(details.id, { comments: [...(details.comments || []), comment] }); setDetails({ ...details, comments: [...(details.comments || []), comment] }); setComment(''); flash('Comentário adicionado.') }}>Adicionar comentário</button></div>}</Modal>
     <ConfirmDialog open={Boolean(pendingAction)} title={pendingAction?.label} message={confirmationMessage(pendingAction?.record, pendingAction?.label, pendingAction?.status)} destructive={['RECUSADO', 'CANCELADA', 'ENCERRADO', 'INATIVO', 'EXCLUIDA', 'EXCLUIDO'].includes(pendingAction?.status)} confirmLabel={busy ? 'Aguarde...' : pendingAction?.label || 'Confirmar'} onCancel={() => setPendingAction(null)} onConfirm={confirmAction} />
     <Modal open={Boolean(towerForm)} title="Nova torre" onClose={() => setTowerForm(null)} onConfirm={async () => { const ok = await runRemote(() => actions.createTower(towerForm.name), setError); if (ok) { setTowerForm(null); flash('Torre cadastrada.') } }} confirmLabel={busy ? 'Salvando...' : 'Salvar'}><DynamicForm fields={[{ key: 'name', label: 'Nome da torre / bloco', required: true }]} values={towerForm || {}} onChange={(key, value) => { setTowerForm((current) => ({ ...current, [key]: value })); setError('') }} error={towerForm ? error : ''} columns={false} /></Modal>

@@ -39,7 +39,7 @@ export default function DesktopDashboard({ role }) {
         {portaria && <><h2 className="eyebrow">Ações rápidas</h2><div className="desktop-actions"><button onClick={() => navigate('/portaria/visitantes')}>+ Registrar visitante</button><button onClick={() => navigate('/portaria/encomendas')}>+ Registrar encomenda</button><button onClick={() => navigate('/portaria/prestadores')}>+ Registrar prestador</button></div></>}
         <div className="dashboard-columns">
           <article className="panel"><h2>{portaria ? 'Visitantes de hoje' : 'Atividades recentes'}</h2>{portaria
-            ? todaysVisitors.slice(0, 3).map((item) => <Row key={item.id} icon={Contact} title={item.name} subtitle={`${item.unit} · ${item.tower}, Responsável: ${item.resident}`} meta={item.startTime} status={item.status} badge={statusLabel(item.status)} tone={['RECUSADO', 'EXPIRADO'].includes(item.status) ? 'red' : 'green'} />)
+            ? todaysVisitors.slice(0, 3).map((item) => <Row key={item.id} icon={Contact} title={item.name} subtitle={[[item.unit, item.tower].filter(Boolean).join(' · '), item.resident && `Responsável: ${item.resident}`].filter(Boolean).join(', ')} meta={item.startTime} status={item.status} badge={statusLabel(item.status)} tone={['RECUSADO', 'EXPIRADO'].includes(item.status) ? 'red' : 'green'} />)
             : data.history.slice(0, 3).map((item) => <Row key={item.id} icon={Contact} title={item.type} subtitle={item.reference} meta={`${item.date} · ${item.time}`} />)}
             {(portaria ? !todaysVisitors.length : !data.history.length) && <p className="dashboard-empty">Nenhuma atividade encontrada.</p>}</article>
           <article className="panel"><h2>{portaria ? 'Encomendas aguardando retirada' : 'Próximas reservas'}</h2>{portaria
