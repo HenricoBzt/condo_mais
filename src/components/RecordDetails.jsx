@@ -11,7 +11,7 @@ const labels = {
   area: 'Área comum', requestedByOwner: 'Solicitação feita por proprietário', isOwner: 'É proprietário',
   authorized: 'Autorização prévia', title: 'Título', content: 'Conteúdo', priority: 'Prioridade',
   destination: 'Destino', description: 'Descrição', category: 'Categoria', openedAt: 'Aberto em',
-  type: 'Operação', reference: 'Referência', user: 'Registrado por', timestamp: 'Data e hora do evento', author: 'Publicado por', approvedBy: 'Aprovada / recusada por', doormanIn: 'Entrada registrada por', doormanOut: 'Saída registrada por',
+  type: 'Operação', reference: 'Referência', user: 'Registrado por', timestamp: 'Data e hora do evento', author: 'Publicado por', approvedBy: 'Aprovada / recusada por', doormanIn: 'Entrada registrada por', bookable: 'Moradores podem reservar', requiresApproval: 'Exige aprovação', capacity: 'Capacidade (pessoas)', rules: 'Regras de uso', doormanOut: 'Saída registrada por',
 }
 
 // Allowlist de apresentação dos mocks atuais, não um DTO definitivo.
@@ -24,6 +24,7 @@ export const detailFields = {
   notices: ['id', 'title', 'content', 'priority', 'destination', 'tower', 'startDate', 'endDate', 'author', 'status'],
   residents: ['id', 'name', 'cpf', 'email', 'phone', 'tower', 'unit', 'relation', 'isOwner', 'status'],
   units: ['id', 'number', 'tower', 'status', 'owners', 'residents'],
+  areas: ['id', 'name', 'description', 'rules', 'bookable', 'requiresApproval', 'capacity', 'status'],
   history: ['id', 'timestamp', 'date', 'time', 'type', 'reference', 'unit', 'user'],
 }
 // Id da API (UUID) não diz nada a quem lê: os detalhes mostram título, código ou nome no lugar

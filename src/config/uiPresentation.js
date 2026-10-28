@@ -17,7 +17,7 @@ export function emptyMessage(collection, filtered = false) {
     visitors: ['Nenhum visitante', 'cadastrado'], providers: ['Nenhum prestador', 'cadastrado'],
     packages: ['Nenhuma encomenda', 'registrada'], reservations: ['Nenhuma reserva', 'registrada'],
     notices: ['Nenhum comunicado', 'disponível'], tickets: ['Nenhum chamado', 'registrado'],
-    residents: ['Nenhum morador', 'cadastrado'], units: ['Nenhuma unidade', 'cadastrada'],
+    residents: ['Nenhum morador', 'cadastrado'], units: ['Nenhuma unidade', 'cadastrada'], areas: ['Nenhuma área comum', 'cadastrada'],
     history: ['Nenhuma operação', 'registrada'], approvals: ['Nenhuma solicitação de aprovação', 'disponível'],
   }
   const [name, ending] = names[collection] || ['Nenhum registro', 'disponível']
@@ -42,6 +42,7 @@ export function confirmationMessage(record, label, status) {
     CONFIRMADA: 'A reserva será confirmada para o período informado.',
     INATIVO: 'O cadastro ficará inativo; os registros anteriores serão mantidos.',
     EXCLUIDO: 'O comunicado será excluído e deixará de aparecer para os moradores.',
+    AREA_INATIVA: 'A área deixará de aparecer para novas reservas. As reservas já feitas e o histórico são mantidos.',
     EXCLUIDA: 'A unidade será excluída definitivamente. Unidades com moradores ou registros vinculados não podem ser excluídas.',
     ATIVO: 'O cadastro voltará a ficar ativo.',
     ENCERRADO: 'O registro será marcado como encerrado.',
