@@ -11,6 +11,8 @@ Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, co
 globalThis.HTMLElement = dom.window.HTMLElement
 globalThis.Event = dom.window.Event
 globalThis.sessionStorage = dom.window.sessionStorage
+// O jsdom não implementa rolagem; o formulário rola até o campo com erro
+dom.window.HTMLElement.prototype.scrollIntoView = () => {}
 
 // Liga o modo API só neste servidor de testes (Vite expõe variáveis VITE_ do ambiente)
 process.env.VITE_API_URL = 'http://api.test'
@@ -51,6 +53,11 @@ const visita = (id, status, extra = {}) => ({
 function fakeApi({ packages = [], packagesStatus = 200, me = { id: 'u-1', nome: 'João', perfil: 'PORTARIA', condominioNome: 'Residencial' }, reservations = [], tickets = [], visits = [] } = {}) {
   const calls = []
   let visitList = [...visits]
+  let areaList = [
+    { id: 'ar-salao', nome: 'Salão de Festas', reservavel: true, exigeAprovacao: true, ativo: true },
+    { id: 'ar-piscina', nome: 'Piscina', reservavel: false, exigeAprovacao: false, ativo: true },
+    { id: 'ar-quadra', nome: 'Quadra', reservavel: true, exigeAprovacao: false, ativo: false },
+  ]
   let list = [...packages]
   let bookings = [...reservations]
   let ticketList = [...tickets]
@@ -88,11 +95,15 @@ function fakeApi({ packages = [], packagesStatus = 200, me = { id: 'u-1', nome: 
       if (isComment) history[id] = [...(history[id] || []), { acao: 'COMENTARIO', comentario: body.comentario, dataHora: '2026-10-27T11:00:00', usuarioNome: me.nome }]
       return reply(200, { ...ticketList.find((item) => item.id === id), historico: history[id] || [] })
     }
-    if (path === '/condominios/areas-comuns') return reply(200, [
-      { id: 'ar-salao', nome: 'Salão de Festas', reservavel: true, exigeAprovacao: true, ativo: true },
-      { id: 'ar-piscina', nome: 'Piscina', reservavel: false, exigeAprovacao: false, ativo: true },
-      { id: 'ar-quadra', nome: 'Quadra', reservavel: true, exigeAprovacao: false, ativo: false },
-    ])
+    if (path === '/condominios/areas-comuns' && method === 'GET') return reply(200, areaList)
+    if (path === '/condominios/areas-comuns' && method === 'POST') { const body = JSON.parse(init.body); areaList = [...areaList, { id: 'ar-new', ...body, ativo: true }]; return reply(200, areaList.at(-1)) }
+    const areaMatch = path.match(/^\/condominios\/areas-comuns\/([^/]+)(\/(ativar|desativar))?$/)
+    if (areaMatch && method === 'PUT') {
+      const [, id, , toggle] = areaMatch
+      const patch = toggle ? { ativo: toggle === 'ativar' } : JSON.parse(init.body)
+      areaList = areaList.map((area) => area.id === id ? { ...area, ...patch } : area)
+      return reply(200, areaList.find((area) => area.id === id))
+    }
     if (path === '/interativo/reservas/ocupacao') return reply(200, [{ horarioInicio: '18:00:00', horarioFim: '22:00:00', status: 'CONFIRMADA' }])
     if (path === '/interativo/reservas' && method === 'GET') return reply(200, bookings)
     if (path === '/interativo/reservas' && method === 'POST') { bookings = [reserva('r-new', 'AGUARDANDO APROVACAO'), ...bookings]; return reply(200, bookings[0]) }
@@ -354,4 +365,45 @@ test('tela de visitantes do morador: autoriza visitante e decide a pendente da u
   fireEvent.click(await view.findByRole('button', { name: 'Autorizar' }))
   fireEvent.click(view.getAllByRole('button', { name: 'Autorizar visita' }).at(-1))
   await waitFor(() => assert.ok(calls.some((call) => call.method === 'PUT' && call.path === '/portaria/visitas/v-1/autorizar')))
+})
+
+test('tela de áreas comuns do admin: cadastra, liga a reserva de uma área existente e desativa pela API', async () => {
+  const calls = fakeApi({ me: admin })
+  sessionStorage.setItem('condoplus.token', jwt({ perfil: 'ADMIN', condominio_id: 'c-1', exp: Math.floor(Date.now() / 1000) + 3600 }))
+  const { fireEvent } = await import('@testing-library/react')
+  const { MemoryRouter } = await import('react-router-dom')
+  const { default: EntityPage } = await server.ssrLoadModule('/src/pages/desktop/EntityPage.jsx')
+  const view = render(React.createElement(AppDataProvider, null, React.createElement(MemoryRouter, null, React.createElement(EntityPage, { role: 'admin', type: 'areasComuns' }))))
+
+  assert.ok(await view.findByText('Piscina'))
+  // Nova área: a opção de aprovação só aparece quando a área é reservável
+  fireEvent.click(view.getByRole('button', { name: /Nova área comum/ }))
+  assert.equal(view.queryByLabelText(/precisa de aprovação/), null)
+  fireEvent.change(view.getByLabelText(/^Nome/), { target: { value: 'piscina' } })
+  fireEvent.click(view.getByRole('button', { name: 'Salvar' }))
+  assert.ok(await view.findByText('Já existe uma área comum com este nome.'))
+  fireEvent.change(view.getByLabelText(/^Nome/), { target: { value: 'Churrasqueira' } })
+  fireEvent.change(view.getByLabelText(/Capacidade/), { target: { value: '20' } })
+  fireEvent.click(view.getByLabelText(/Moradores podem reservar/))
+  fireEvent.click(view.getByLabelText(/precisa de aprovação/))
+  fireEvent.click(view.getByRole('button', { name: 'Salvar' }))
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'POST' && call.path === '/condominios/areas-comuns')))
+  assert.deepEqual(calls.find((call) => call.method === 'POST' && call.path === '/condominios/areas-comuns').body,
+    { nome: 'Churrasqueira', descricao: null, regras: null, reservavel: true, exigeAprovacao: true, capacidade: 20 })
+  assert.ok(await view.findByText('Churrasqueira'))
+
+  // Área sugerida pelo wizard (não reservável) passa a aceitar reservas
+  const piscina = view.getByText('Piscina').closest('tr')
+  fireEvent.click(piscina.querySelector('.row-action'))
+  fireEvent.click(await view.findByRole('button', { name: 'Editar' }))
+  fireEvent.click(view.getByLabelText(/Moradores podem reservar/))
+  fireEvent.click(view.getByRole('button', { name: 'Salvar alterações' }))
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'PUT' && call.path === '/condominios/areas-comuns/ar-piscina' && call.body.reservavel === true && call.body.exigeAprovacao === false)))
+
+  const salao = view.getByText('Salão de Festas').closest('tr')
+  fireEvent.click(salao.querySelector('.row-action'))
+  fireEvent.click(await view.findByRole('button', { name: 'Desativar' }))
+  fireEvent.click(view.getAllByRole('button', { name: 'Desativar área comum' }).at(-1))
+  await waitFor(() => assert.ok(calls.some((call) => call.method === 'PUT' && call.path === '/condominios/areas-comuns/ar-salao/desativar')))
+  await waitFor(() => assert.ok(view.getAllByText('Inativo').length >= 2))
 })

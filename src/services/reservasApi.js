@@ -38,6 +38,7 @@ export function toArea(area) {
     requiresApproval: Boolean(area.exigeAprovacao),
     active: area.ativo !== false,
     capacity: area.capacidade ?? null,
+    status: area.ativo === false ? 'INATIVO' : 'ATIVO',
   }
 }
 

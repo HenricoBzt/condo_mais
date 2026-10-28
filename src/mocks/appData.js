@@ -44,6 +44,11 @@ export const initialAppData = {
     { id: 'RES-305', area: 'Academia', resident: 'Ricardo Lima', tower: 'Torre B', unit: '207', date: '2026-09-10', startTime: '07:00', endTime: '08:00', notes: '', status: 'CANCELADA' },
   ],
   commonAreas,
+  areas: [
+    { id: 'ARE-1', name: 'Salão de Festas', description: 'Salão com cozinha de apoio.', rules: 'Uso até 23h.', bookable: true, requiresApproval: true, capacity: 80, active: true, status: 'ATIVO' },
+    { id: 'ARE-2', name: 'Churrasqueira', description: '', rules: '', bookable: true, requiresApproval: false, capacity: 20, active: true, status: 'ATIVO' },
+    { id: 'ARE-3', name: 'Piscina', description: '', rules: 'Proibido vidro.', bookable: false, requiresApproval: false, capacity: null, active: true, status: 'ATIVO' },
+  ],
   notices: [
     { id: 'AVI-401', title: 'Interrupção no abastecimento de água', content: 'O abastecimento da Torre B será interrompido temporariamente.', priority: 'URGENTE', destination: 'Todo condomínio', tower: '', startDate: '2026-09-08', endDate: '2026-09-09', status: 'ATIVO' },
     { id: 'AVI-402', title: 'Manutenção preventiva da piscina', content: 'A piscina ficará indisponível durante a manutenção.', priority: 'NORMAL', destination: 'Todo condomínio', tower: '', startDate: '2026-09-08', endDate: '2026-09-10', status: 'ATIVO' },

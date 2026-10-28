@@ -1,4 +1,4 @@
-import { Archive, Bell, Building, CalendarCheck, CircleGauge, ClipboardClock, Contact, Headphones, History, LogOut, Menu, Megaphone, Package, Settings, UserRound, UsersRound } from 'lucide-react'
+import { Archive, Bell, Building, CalendarCheck, Trees, CircleGauge, ClipboardClock, Contact, Headphones, History, LogOut, Menu, Megaphone, Package, Settings, UserRound, UsersRound } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { useState } from 'react'
 import Brand from '../components/Brand'
@@ -7,7 +7,7 @@ import { useAppData } from '../context/AppDataContext'
 import { logout } from '../services/authApi'
 
 const adminLinks = [
-  ['Visão geral', '/admin', CircleGauge], ['Moradores', '/admin/moradores', UsersRound], ['Unidades', '/admin/unidades', Building], ['Encomendas', '/admin/encomendas', Package], ['Reservas', '/admin/reservas', CalendarCheck], ['Visitantes', '/admin/visitantes', Contact], ['Comunicados', '/admin/comunicados', Megaphone], ['Chamados', '/admin/chamados', Headphones],
+  ['Visão geral', '/admin', CircleGauge], ['Moradores', '/admin/moradores', UsersRound], ['Unidades', '/admin/unidades', Building], ['Encomendas', '/admin/encomendas', Package], ['Reservas', '/admin/reservas', CalendarCheck], ['Áreas comuns', '/admin/areas-comuns', Trees], ['Visitantes', '/admin/visitantes', Contact], ['Comunicados', '/admin/comunicados', Megaphone], ['Chamados', '/admin/chamados', Headphones],
 ]
 const portariaLinks = [
   ['Visão geral', '/portaria', CircleGauge], ['Visitantes', '/portaria/visitantes', UsersRound], ['Prestadores', '/portaria/prestadores', ClipboardClock], ['Encomendas', '/portaria/encomendas', Archive], ['Avisos', '/portaria/avisos', Megaphone], ['Chamados', '/portaria/chamados', Headphones], ['Histórico', '/portaria/historico', History],

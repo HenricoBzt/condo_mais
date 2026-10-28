@@ -53,6 +53,7 @@ export default function App() {
         <Route path="/admin/unidades" element={<EntityPage role="admin" type="unidades" />} />
         <Route path="/admin/encomendas" element={<EntityPage role="admin" type="encomendasAdmin" />} />
         <Route path="/admin/reservas" element={<EntityPage role="admin" type="reservas" />} />
+        <Route path="/admin/areas-comuns" element={<EntityPage role="admin" type="areasComuns" />} />
         <Route path="/admin/visitantes" element={<EntityPage role="admin" type="visitantesAdmin" />} />
         <Route path="/admin/comunicados" element={<EntityPage role="admin" type="comunicados" />} />
         <Route path="/admin/chamados" element={<EntityPage role="admin" type="chamadosAdmin" />} />

@@ -19,11 +19,12 @@ import { basicValidation, noticePeriodError, unitDuplicate, unitEditPatch, match
 import { visitantesService, visitorEntryError } from '../../services/visitantesService'
 import { findPackageUnit } from '../../services/encomendasApi'
 import { TICKET_COMMON_AREA, ticketUnitLabel } from '../../services/chamadosApi'
+import { areaBody, areaNameTaken, areasService } from '../../services/areasComunsApi'
 
 import { confirmationMessage, emptyMessage } from '../../config/uiPresentation'
 import { towers, priorities } from '../../config/catalogs'
 
-const services = { visitors: visitantesService, providers: prestadoresService, packages: encomendasService, reservations: reservasService, notices: avisosService, tickets: chamadosService, residents: moradoresService, units: unidadesService }
+const services = { visitors: visitantesService, providers: prestadoresService, packages: encomendasService, reservations: reservasService, notices: avisosService, tickets: chamadosService, residents: moradoresService, units: unidadesService, areas: areasService }
 
 const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(value || ''))
 
@@ -83,13 +84,14 @@ function EntityModule({ role, type }) {
   const remoteReservations = remoteMode && config.collection === 'reservations'
   const remoteTickets = remoteMode && config.collection === 'tickets'
   const remoteVisitors = remoteMode && config.collection === 'visitors'
+  const areasPage = config.collection === 'areas'
   const ticketCategoryNames = (data.ticketCategories || []).map((category) => category.name)
   // Opções de torre vêm do banco; vínculos da unidade são geridos pelo cadastro de moradores.
   // Encomenda: a unidade é escolhida entre as da torre selecionada; condomínio sem torres não pede torre.
   const packageUnitOptions = remotePackages || remoteVisitors
     ? (data.units || []).filter((unit) => (unit.tower || '') === (form.tower || '')).map((unit) => unit.number).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))
     : []
-  const fields = remoteMode
+  const baseFields = remoteMode
     ? config.fields
       .filter((field) => !(config.collection === 'units' && ['owner', 'resident'].includes(field.key)))
       .filter((field) => !((remotePackages || remoteVisitors) && field.key === 'tower' && !towerNames.length))
@@ -108,6 +110,8 @@ function EntityModule({ role, type }) {
         return field
       })
     : config.fields
+  // Área comum: a aprovação só aparece para área que pode ser reservada
+  const fields = areasPage && !form.bookable ? baseFields.filter((field) => field.key !== 'requiresApproval') : baseFields
 
   useEffect(() => { setComment('') }, [details?.id])
 
@@ -136,6 +140,22 @@ function EntityModule({ role, type }) {
   }
 
   async function saveRecord() {
+    if (areasPage) {
+      let validation = validate(fields, form) || (areaNameTaken(records, form.name, editing?.id) ? 'Já existe uma área comum com este nome.' : '')
+      if (!validation) { try { areaBody(form) } catch (bodyError) { validation = bodyError.message } }
+      if (validation) { setError(validation); return }
+      const patch = { ...form, requiresApproval: Boolean(form.bookable) && Boolean(form.requiresApproval) }
+      if (remoteMode) {
+        const ok = await runRemote(() => actions.saveAreaRemote(form, editing?.id), setError)
+        if (!ok) return
+      } else if (editing) {
+        actions.updateArea(editing.id, patch)
+      } else {
+        actions.addArea(patch)
+      }
+      setOpen(false); flash(editing ? 'Área comum atualizada.' : 'Área comum cadastrada.')
+      return
+    }
     if (remoteVisitors) {
       const validation = validate(fields, form) || basicValidation({ cpf: form.cpf, phone: form.phone }) || (findPackageUnit(data.units, form) ? '' : 'Selecione uma unidade existente nesta Torre / Bloco.')
       if (validation) { setError(validation); return }
@@ -194,6 +214,19 @@ function EntityModule({ role, type }) {
   function requestAction(action, record, label, status) { setPendingAction({ action, record, label, status }) }
   async function confirmAction() {
     const { action, record, status } = pendingAction
+    if (areasPage && action === 'area') {
+      const active = status === 'ATIVO'
+      if (remoteMode) {
+        const ok = await runRemote(() => actions.setAreaActiveRemote(record.id, active), (message) => { setPendingAction(null); flash(message) })
+        if (!ok) return
+      } else {
+        actions.updateArea(record.id, { active, status })
+      }
+      setPendingAction(null)
+      setDetails(null)
+      flash(active ? 'Área comum reativada.' : 'Área comum desativada. O histórico de reservas foi mantido.')
+      return
+    }
     if (remoteVisitors && action === 'visitor') {
       const ok = await runRemote(() => actions.setVisitorStatusRemote(record.id, status), (message) => { setPendingAction(null); flash(message) })
       if (!ok) return
@@ -290,6 +323,7 @@ function EntityModule({ role, type }) {
     if (remoteReservations && record.status === 'AGUARDANDO_APROVACAO') return <><button className="primary-button" onClick={() => requestAction('reservation', record, 'Aprovar reserva', 'CONFIRMADA')}>Aprovar</button><button className="danger-button" onClick={() => requestAction('reservation', record, 'Recusar reserva', 'RECUSADA')}>Recusar</button><button className="danger-button" onClick={() => requestAction('reservation', record, 'Cancelar reserva', 'CANCELADA')}>Cancelar excepcionalmente</button></>
     if (remoteReservations && record.status !== 'CONFIRMADA') return null
     if (config.collection === 'reservations' && !['CANCELADA', 'CONCLUIDA'].includes(record.status)) return <button className="danger-button" onClick={() => requestAction('reservation', record, 'Cancelar reserva', 'CANCELADA')}>Cancelar excepcionalmente</button>
+    if (areasPage) return <><button className="secondary-button" onClick={() => startEdit(record)}>Editar</button><button className={record.status === 'ATIVO' ? 'danger-button' : 'primary-button'} onClick={() => requestAction('area', record, record.status === 'ATIVO' ? 'Desativar área comum' : 'Reativar área comum', record.status === 'ATIVO' ? 'AREA_INATIVA' : 'ATIVO')}>{record.status === 'ATIVO' ? 'Desativar' : 'Reativar'}</button></>
     if (remoteNotices) return <><button className="secondary-button" onClick={() => startEdit(record)}>Editar</button><button className="danger-button" onClick={() => requestAction('noticeDelete', record, 'Excluir comunicado', 'EXCLUIDO')}>Excluir</button></>
     if (config.collection === 'notices') return <><button className="secondary-button" onClick={() => startEdit(record)}>Editar</button>{record.status === 'ATIVO' && <button className="danger-button" onClick={() => requestAction('notice', record, 'Encerrar comunicado', 'ENCERRADO')}>Encerrar</button>}</>
     if (config.collection === 'residents') return <><button className="secondary-button" onClick={() => startEdit(record)}>Editar</button><button className={record.status === 'ATIVO' ? 'danger-button' : 'primary-button'} onClick={() => requestAction('resident', record, record.status === 'ATIVO' ? 'Desativar morador' : 'Ativar morador', record.status === 'ATIVO' ? 'INATIVO' : 'ATIVO')}>{record.status === 'ATIVO' ? 'Desativar' : 'Ativar'}</button></>
@@ -327,7 +361,7 @@ function EntityModule({ role, type }) {
     </section>
     <Modal open={open} title={editing ? `Editar ${config.title.toLowerCase()}` : config.action || 'Novo registro'} onClose={() => setOpen(false)} onConfirm={saveRecord} confirmLabel={busy ? 'Salvando...' : editing ? 'Salvar alterações' : (type.includes('encomendas') ? 'Registrar' : 'Salvar')}><DynamicForm fields={fields} values={form} onChange={(key, value) => { setForm((current) => ({ ...current, [key]: value, ...((remotePackages || remoteVisitors) && key === 'tower' ? { unit: '' } : {}) })); setError('') }} error={error} /></Modal>
     <Modal open={Boolean(details)} title={details ? `Detalhes · ${details.code || (isUuid(details.id) ? details.title || details.name || '' : details.id)}` : 'Detalhes'} onClose={() => setDetails(null)} ><RecordDetails record={details} collection={config.collection} />{details && <div className="detail-actions">{detailActions(details)}</div>}{details && config.collection === 'tickets' && !(remoteTickets && details.status === 'ENCERRADO') && <div className="comment-box"><label>Adicionar comentário<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Descreva a atualização" /></label><button className="secondary-button" disabled={!comment.trim() || busy} onClick={() => { if (remoteTickets) { addRemoteComment(); return } actions.updateTicket(details.id, { comments: [...(details.comments || []), comment] }); setDetails({ ...details, comments: [...(details.comments || []), comment] }); setComment(''); flash('Comentário adicionado.') }}>Adicionar comentário</button></div>}</Modal>
-    <ConfirmDialog open={Boolean(pendingAction)} title={pendingAction?.label} message={confirmationMessage(pendingAction?.record, pendingAction?.label, pendingAction?.status)} destructive={['RECUSADO', 'CANCELADA', 'ENCERRADO', 'INATIVO', 'EXCLUIDA', 'EXCLUIDO'].includes(pendingAction?.status)} confirmLabel={busy ? 'Aguarde...' : pendingAction?.label || 'Confirmar'} onCancel={() => setPendingAction(null)} onConfirm={confirmAction} />
+    <ConfirmDialog open={Boolean(pendingAction)} title={pendingAction?.label} message={confirmationMessage(pendingAction?.record, pendingAction?.label, pendingAction?.status)} destructive={['RECUSADO', 'CANCELADA', 'ENCERRADO', 'INATIVO', 'EXCLUIDA', 'EXCLUIDO', 'AREA_INATIVA'].includes(pendingAction?.status)} confirmLabel={busy ? 'Aguarde...' : pendingAction?.label || 'Confirmar'} onCancel={() => setPendingAction(null)} onConfirm={confirmAction} />
     <Modal open={Boolean(towerForm)} title="Nova torre" onClose={() => setTowerForm(null)} onConfirm={async () => { const ok = await runRemote(() => actions.createTower(towerForm.name), setError); if (ok) { setTowerForm(null); flash('Torre cadastrada.') } }} confirmLabel={busy ? 'Salvando...' : 'Salvar'}><DynamicForm fields={[{ key: 'name', label: 'Nome da torre / bloco', required: true }]} values={towerForm || {}} onChange={(key, value) => { setTowerForm((current) => ({ ...current, [key]: value })); setError('') }} error={towerForm ? error : ''} columns={false} /></Modal>
     <div role="status" aria-live="polite" aria-atomic="true">{saved && <div className="toast">{saved}</div>}</div>
   </DesktopLayout>

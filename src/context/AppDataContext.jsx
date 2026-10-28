@@ -13,6 +13,7 @@ import { carregarComunicados, excluirComunicado, salvarComunicado } from '../ser
 import { alterarStatusReserva, carregarAreasComuns, carregarReservas, solicitarReserva } from '../services/reservasApi'
 import { abrirChamado, atualizarChamado, carregarCategoriasChamado, carregarChamado, carregarChamados, comentarChamado } from '../services/chamadosApi'
 import { alterarStatusVisita, cadastrarVisita, carregarVisitas } from '../services/visitasApi'
+import { alterarStatusAreaComum, areasService, salvarAreaComum } from '../services/areasComunsApi'
 import { prestadoresService } from '../services/prestadoresService'
 import { reservasService } from '../services/reservasService'
 import { nowLabel, todayIso } from '../services/serviceUtils'
@@ -190,6 +191,8 @@ export function AppDataProvider({ children }) {
     openTicketRemote: (form) => collectionCommand('tickets', () => abrirChamado(form, { units: dataRef.current.units, categories: dataRef.current.ticketCategories })),
     updateTicketRemote: (id, patch) => collectionCommand('tickets', () => atualizarChamado(id, patch)),
     commentTicketRemote: (id, comment) => collectionCommand('tickets', () => comentarChamado(id, comment)),
+    saveAreaRemote: (form, editingId) => collectionCommand('areas', () => salvarAreaComum(form, editingId)),
+    setAreaActiveRemote: (id, active) => collectionCommand('areas', () => alterarStatusAreaComum(id, active)),
     saveVisitorRemote: (form, asResident = false) => collectionCommand('visitors', () => cadastrarVisita(form, { units: dataRef.current.units, asResident })),
     setVisitorStatusRemote: (id, status) => collectionCommand('visitors', () => alterarStatusVisita(id, status)),
     // Detalhe com histórico: não altera a lista, só devolve o chamado completo para o modal
@@ -234,6 +237,8 @@ export function AppDataProvider({ children }) {
     updateTicket(id, patch) { setData((current) => ({ ...current, tickets: chamadosService.atualizar(current.tickets, id, patch) })) },
     addResident(payload) { setData((current) => { const result = moradoresService.criar(current.residents, payload); return { ...current, residents: result.records } }) },
     updateResident(id, patch) { setData((current) => ({ ...current, residents: moradoresService.atualizar(current.residents, id, patch) })) },
+    addArea(payload) { setData((current) => ({ ...current, areas: areasService.criar(current.areas || [], payload).records })) },
+    updateArea(id, patch) { setData((current) => ({ ...current, areas: areasService.atualizar(current.areas || [], id, patch) })) },
     addUnit(payload) { setData((current) => { const result = unidadesService.criar(current.units, payload); return { ...current, units: result.records } }) },
     updateUnit(id, patch) { setData((current) => ({ ...current, units: unidadesService.atualizar(current.units, id, patch) })) },
     saveCondominium(payload) { setData((current) => ({ ...current, condominium: { ...current.condominium, ...payload } })) },

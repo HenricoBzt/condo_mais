@@ -41,6 +41,12 @@ export const entityConfigs = {
     columns: [['Morador', 'name', 'cpf'], ['Unidade', 'unit', 'tower'], ['Vínculo', 'relation'], ['Contato', 'email', 'phone'], ['Status', 'status']],
     fields: [{ key: 'name', label: 'Nome', required: true }, { key: 'cpf', label: 'CPF', required: true }, { key: 'email', label: 'E-mail', type: 'email', required: true }, { key: 'phone', label: 'Telefone', required: true }, { key: 'tower', label: 'Torre / Bloco', type: 'select', options: towers.slice(0, 3), required: true }, { key: 'unit', label: 'Unidade', required: true }, { key: 'relation', label: 'Vínculo com a unidade', type: 'select', options: ['PROPRIETARIO', 'INQUILINO'], required: true }],
   },
+  areasComuns: {
+    collection: 'areas', title: 'Áreas comuns', subtitle: 'Cadastre as áreas do condomínio e defina quais podem ser reservadas pelos moradores.', action: 'Nova área comum', empty: 'Nenhuma área comum encontrada.',
+    tabs: [['Todas', []], ['Ativas', ['ATIVO']], ['Inativas', ['INATIVO']]],
+    columns: [['Área', 'name', 'description'], ['Reservável', 'bookable'], ['Exige aprovação', 'requiresApproval'], ['Capacidade', 'capacity'], ['Status', 'status']],
+    fields: [{ key: 'name', label: 'Nome', required: true }, { key: 'capacity', label: 'Capacidade (pessoas)', type: 'number', placeholder: 'Opcional' }, { key: 'description', label: 'Descrição', type: 'textarea' }, { key: 'rules', label: 'Regras de uso', type: 'textarea', placeholder: 'Ex.: horário máximo, limpeza após o uso' }, { key: 'bookable', label: 'Moradores podem reservar', type: 'checkbox' }, { key: 'requiresApproval', label: 'Reserva de inquilino precisa de aprovação (proprietário ou administração)', type: 'checkbox' }],
+  },
   unidades: {
     collection: 'units', title: 'Unidades', subtitle: 'Gerencie as unidades do condomínio.', action: 'Nova unidade', empty: 'Nenhuma unidade encontrada.',
     tabs: [['Todas', []], ['Ocupadas', ['OCUPADO']], ['Livres', ['LIVRE']], ['Inativas', ['INATIVO']], ['Reservadas', ['RESERVADO']]],
