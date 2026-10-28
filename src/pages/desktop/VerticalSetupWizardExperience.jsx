@@ -2,6 +2,7 @@ import { cloneElement, useEffect, useReducer, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Building2, Check, ChevronLeft, ChevronRight, CircleAlert, Plus, Trash2 } from 'lucide-react'
 import SetupLayout from '../../layouts/SetupLayout'
+import BuildingPreview from '../../components/BuildingPreview'
 import {
   PREDEFINED_COMMON_AREAS,
   SETUP_STEPS,
@@ -10,7 +11,6 @@ import {
   getTowerUnitCount,
   getTowerUnitPreview,
   getTotalUnitCount,
-  summarizeTowerUnits,
   validateStepDetails,
   wizardReducer,
 } from '../../features/setupWizard/verticalSetup'
@@ -82,18 +82,14 @@ function TowersStep({ towers, dispatch, errors }) {
   return <div className="setup-stack">{towers.map((tower, index) => <TowerCard key={tower.id} tower={tower} index={index} canRemove={towers.length > 1} dispatch={dispatch} errors={errors} />)}<button type="button" className="setup-add-button" onClick={() => dispatch({ type: 'ADD_TOWER' })}><Plus size={18} /> Adicionar outra torre</button></div>
 }
 
-function UnitsStep({ towers }) {
+export function UnitsStep({ towers }) {
   const total = getTotalUnitCount(towers)
-  return <div className="setup-stack"><div className="setup-total"><span>Total previsto</span><strong>{total}</strong><small>unidades em {towers.length} {towers.length === 1 ? 'torre' : 'torres'}</small></div>
-    <p className="setup-preview-guidance">Confira exemplos reais da numeração. Em configurações grandes, mostramos uma amostra sem alterar o total gerado.</p>
-    {towers.map((tower) => {
-      const summary = summarizeTowerUnits(tower)
-      return <article className="setup-preview-card" key={tower.id}><header><div><h3>{tower.name}</h3><p>{tower.floorCount} andares · {tower.unitsPerFloor} apartamentos por andar</p></div><strong>{summary.total} unidades</strong></header>
-        <div className="setup-floor-list">{summary.floors.map((floor) => <div className="setup-floor-row" key={floor.floor}><strong>Andar {floor.floor}</strong><div>{floor.numbers.map((number) => <span key={number}>{number}</span>)}{floor.omittedUnits > 0 && <em>+{floor.omittedUnits} unidades</em>}</div></div>)}</div>
-        {summary.omittedFloors > 0 && <p className="setup-preview-note">{summary.omittedFloors} {summary.omittedFloors === 1 ? 'andar intermediário foi omitido' : 'andares intermediários foram omitidos'} desta prévia.</p>}
-        <p className="setup-preview-range">Primeira unidade: <strong>{summary.first || '—'}</strong> · Última unidade: <strong>{summary.last || '—'}</strong></p>
-      </article>
-    })}
+  const [activeId, setActiveId] = useState(towers[0]?.id)
+  const active = towers.find((tower) => tower.id === activeId) || towers[0]
+  return <div className="setup-stack">
+    <p className="setup-preview-guidance">Gire o prédio e toque em um andar para conferir a numeração antes de salvar. Nada é gravado até você concluir no resumo.</p>
+    {towers.length > 1 && <div className="building-tabs" role="group" aria-label="Torre exibida na prévia">{towers.map((tower, index) => <button type="button" key={tower.id} aria-pressed={tower.id === active.id} className={tower.id === active.id ? 'is-active' : undefined} onClick={() => setActiveId(tower.id)}>{tower.name.trim() || `Torre ${index + 1}`}<small>{getTowerUnitCount(tower)} unid.</small></button>)}</div>}
+    <BuildingPreview key={active.id} tower={active} totalUnits={total} towerCount={towers.length} />
   </div>
 }
 
