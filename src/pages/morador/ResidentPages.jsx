@@ -1,5 +1,5 @@
 import { CalendarCheck, CheckCircle2, ChevronRight, LogOut, MapPin, Megaphone, Package, Phone, ShieldCheck, TicketCheck, UserRound, UsersRound, Wrench } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import RecordDetails from '../../components/RecordDetails'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -12,6 +12,7 @@ import { useAppData } from '../../context/AppDataContext'
 import ResidentLayout from '../../layouts/ResidentLayout'
 import { logout } from '../../services/authApi'
 import { reservasService } from '../../services/reservasService'
+import { availabilityFromOccupation, bookableAreas, carregarOcupacao } from '../../services/reservasApi'
 import { statusLabel, sameUnit, activeNotices, basicValidation } from '../../services/serviceUtils'
 import { visitantesService } from '../../services/visitantesService'
 
@@ -80,7 +81,7 @@ export function ResidentListPage(props) {
 
 function ResidentListModule({ type }) {
   const config = listConfigs[type]
-  const { data, actions } = useAppData()
+  const { data, actions, remote } = useAppData()
   const [tab, setTab] = useState(0)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({})
@@ -88,17 +89,51 @@ function ResidentListModule({ type }) {
   const [details, setDetails] = useState(null)
   const [success, setSuccess] = useState('')
   const [pending, setPending] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [occupation, setOccupation] = useState({ key: '', slots: null, error: '' })
   const statuses = config.tabs[tab][1]
   const ownLocation = `Unidade ${data.currentResident.unit} · ${data.currentResident.tower}`
-  const fields = type === 'chamados' ? ticketFields(data.currentResident, data.units) : config.fields
+  // Com a API ligada, reservas usam as áreas do condomínio e a agenda real (/ocupacao)
+  const remoteReservations = Boolean(remote?.reservations && remote.reservations.status !== 'idle') && ['reservas', 'aprovacoes'].includes(type)
+  const areaOptions = bookableAreas(data.areas || [])
+  const selectedArea = areaOptions.find((area) => area.name === form.area)
+  const fields = type === 'chamados'
+    ? ticketFields(data.currentResident, data.units)
+    : remoteReservations
+      ? config.fields.filter((field) => field.key !== 'notes').map((field) => field.key === 'area' ? { ...field, options: areaOptions.map((area) => area.name) } : field)
+      : config.fields
+  const occupationKey = remoteReservations && type === 'reservas' && selectedArea && form.date ? `${selectedArea.id}|${form.date}` : ''
+  useEffect(() => {
+    if (!occupationKey) return undefined
+    let current = true
+    const [areaId, date] = occupationKey.split('|')
+    setOccupation({ key: occupationKey, slots: null, error: '' })
+    carregarOcupacao(areaId, date).then(
+      (slots) => { if (current) setOccupation({ key: occupationKey, slots, error: '' }) },
+      (loadError) => { if (current) setOccupation({ key: occupationKey, slots: null, error: loadError.message }) },
+    )
+    return () => { current = false }
+  }, [occupationKey])
   const records = useMemo(() => {
     if (type === 'visitantes') return visitantesService.listar(data.visitors, { unit: data.currentResident.unit, tower: data.currentResident.tower, statuses })
     if (type === 'reservas' || type === 'aprovacoes') return reservasService.listar(data.reservations, { unit: data.currentResident.unit, tower: data.currentResident.tower, statuses })
     return data.tickets.filter((item) => sameUnit(item, data.currentResident) && (!statuses.length || statuses.includes(item.status)))
   }, [data, statuses, type])
-  const availability = type === 'reservas' && form.area && form.date && form.startTime && form.endTime ? reservasService.verificarDisponibilidade(data.reservations, form) : null
+  const remoteAvailability = () => {
+    if (occupation.key !== occupationKey) return { available: false, message: 'Verificando disponibilidade...' }
+    if (occupation.error) return { available: false, message: occupation.error }
+    if (!occupation.slots) return { available: false, message: 'Verificando disponibilidade...' }
+    return availabilityFromOccupation(occupation.slots, form)
+  }
+  const availability = type === 'reservas' && form.area && form.date && form.startTime && form.endTime
+    ? (remoteReservations ? remoteAvailability() : reservasService.verificarDisponibilidade(data.reservations, form))
+    : null
+  const approvalNote = remoteReservations && type === 'reservas' && selectedArea?.requiresApproval
+    ? (data.currentResident.isOwner ? 'Esta área exige aprovação; como proprietário, sua reserva é confirmada na hora.' : 'Esta área exige aprovação: a reserva fica pendente até o proprietário da unidade ou a administração aprovar.')
+    : ''
   const flash = (message) => { setSuccess(message); setTimeout(() => setSuccess(''), 2500) }
-  function save() {
+  async function save() {
+    if (busy) return
     if (type === 'reservas' && !data.condominium.allowResidentBookings) { setError('Solicitações de reserva estão temporariamente indisponíveis.'); return }
     const missing = fields.find((field) => field.required && !String(form[field.key] || '').trim())
     if (missing) { setError(`Preencha o campo “${missing.label}”.`); return }
@@ -108,15 +143,43 @@ function ResidentListModule({ type }) {
       if (periodError) { setError(periodError); return }
     }
     if (type === 'reservas' && !availability?.available) { setError(availability?.message || 'Verifique a disponibilidade.'); return }
+    if (remoteReservations && type === 'reservas') {
+      setBusy(true)
+      try {
+        await actions.addReservationRemote(form)
+        setOpen(false); setForm({})
+        flash(selectedArea?.requiresApproval && !data.currentResident.isOwner ? 'Reserva solicitada. Ela fica pendente até ser aprovada.' : 'Reserva confirmada.')
+      } catch (saveError) {
+        setError(saveError.message)
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
     if (type === 'visitantes') actions.addVisitor({ ...form, tower: data.currentResident.tower, unit: data.currentResident.unit, resident: data.currentResident.name }, 'MORADOR')
     if (type === 'reservas') actions.addReservation(form)
     if (type === 'chamados') actions.addTicket({ ...form, resident: data.currentResident.name, tower: data.currentResident.tower, unit: data.currentResident.unit })
     setOpen(false); setForm({}); flash(type === 'visitantes' ? 'Visitante autorizado com sucesso.' : type === 'reservas' ? 'Reserva criada com sucesso.' : 'Chamado aberto com sucesso.')
   }
-  function confirm() {
+  async function confirm() {
+    if (remoteReservations && pending.kind === 'reservation') {
+      if (busy) return
+      setBusy(true)
+      try {
+        await actions.setReservationStatusRemote(pending.record.id, pending.status)
+        flash(pending.status === 'CONFIRMADA' ? 'Reserva aprovada.' : pending.status === 'RECUSADA' ? 'Reserva recusada.' : 'Reserva cancelada.')
+      } catch (actionError) {
+        flash(actionError.message)
+      } finally {
+        setBusy(false); setDetails(null); setPending(null)
+      }
+      return
+    }
     if (pending.kind === 'reservation') actions.setReservationStatus(pending.record.id, pending.status)
     setDetails(null); setPending(null); flash('Solicitação atualizada com sucesso.')
   }
+  // Na API, cancela quem pediu (ou a administração); o restante da unidade só acompanha
+  const canCancel = (record) => !['CANCELADA', 'CONCLUIDA', 'RECUSADA'].includes(record.status) && (!remoteReservations || record.resident === data.currentResident.name)
   function summary(record) {
     if (type === 'visitantes') return [`${record.startDate} · ${record.startTime}`, `Até ${record.endDate} · ${record.endTime}`, statusLabel(record.status)]
     if (type === 'chamados') return [record.id, record.openedAt, statusLabel(record.status)]
@@ -128,8 +191,8 @@ function ResidentListModule({ type }) {
   const emptyFiltered = Boolean(ownRecords.length && statuses.length)
   const Icon = config.icon
   return <ResidentLayout><section className="resident-page"><ResidentPageHeader backTo="/morador/mais" title={config.title} subtitle={config.subtitle} action={config.action} onAction={() => { if (type === 'reservas' && !data.condominium.allowResidentBookings) { flash('Solicitações de reserva estão temporariamente indisponíveis.'); return } setForm(type === 'chamados' ? { location: ownLocation } : {}); setError(''); setOpen(true) }} /><div className="mobile-tabs">{config.tabs.map(([label], index) => <button aria-pressed={tab === index} className={tab === index ? 'active' : ''} onClick={() => setTab(index)} key={label}>{label}</button>)}</div><h3 className="section-label">{config.title}</h3><div className="resident-card-list">{records.map((record) => { const info = summary(record); return <button key={record.id} onClick={() => setDetails(record)}><Icon size={21} /><span><strong>{record.name || record.area || record.title}</strong><small>{info[0]}</small><small>{info[1]}</small><StatusBadge status={record.status}>{info[2]}</StatusBadge></span><ChevronRight size={16} /></button> })}</div>{records.length === 0 && <EmptyState title={emptyMessage(type === 'aprovacoes' ? 'approvals' : collection, emptyFiltered)} onClear={emptyFiltered && tab > 0 ? () => setTab(0) : undefined} />}</section>
-    <Modal open={open} title={config.action} onClose={() => setOpen(false)} onConfirm={save} confirmLabel={config.action}><DynamicForm fields={fields} values={form} onChange={(key, value) => { setForm((current) => ({ ...current, [key]: value })); setError('') }} error={error} />{availability && error !== availability.message && <p className={availability.available ? 'availability availability--ok' : 'availability availability--error'}>{availability.message}</p>}{type === 'visitantes' && <p className="form-note">Unidade vinculada: {data.currentResident.unit} · {data.currentResident.tower}. Proprietários e inquilinos vinculados podem autorizar.</p>}</Modal>
-    <Modal open={Boolean(details)} title={details ? `Detalhes · ${details.id}` : 'Detalhes'} onClose={() => setDetails(null)} ><RecordDetails record={details} collection={collection} />{details && type === 'reservas' && !['CANCELADA', 'CONCLUIDA'].includes(details.status) && <div className="detail-actions"><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CANCELADA', label: 'Cancelar reserva' })}>Cancelar reserva</button></div>}{details && type === 'aprovacoes' && details.status === 'AGUARDANDO_APROVACAO' && <div className="detail-actions"><button className="primary-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CONFIRMADA', label: 'Aprovar reserva' })}>Aprovar</button><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'RECUSADA', label: 'Recusar reserva' })}>Recusar</button></div>}</Modal>
+    <Modal open={open} title={config.action} onClose={() => setOpen(false)} onConfirm={save} confirmLabel={busy ? 'Enviando...' : config.action}><DynamicForm fields={fields} values={form} onChange={(key, value) => { setForm((current) => ({ ...current, [key]: value })); setError('') }} error={error} />{availability && error !== availability.message && <p className={availability.available ? 'availability availability--ok' : 'availability availability--error'}>{availability.message}</p>}{approvalNote && <p className="form-note">{approvalNote}</p>}{remoteReservations && type === 'reservas' && !areaOptions.length && <p className="form-note">Nenhuma área comum disponível para reserva no momento.</p>}{type === 'visitantes' && <p className="form-note">Unidade vinculada: {data.currentResident.unit} · {data.currentResident.tower}. Proprietários e inquilinos vinculados podem autorizar.</p>}</Modal>
+    <Modal open={Boolean(details)} title={details ? `Detalhes · ${/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(details.id)) ? details.area || details.name || details.title || '' : details.id}` : 'Detalhes'} onClose={() => setDetails(null)} ><RecordDetails record={details} collection={collection} />{details && type === 'reservas' && canCancel(details) && <div className="detail-actions"><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CANCELADA', label: 'Cancelar reserva' })}>Cancelar reserva</button></div>}{details && type === 'aprovacoes' && details.status === 'AGUARDANDO_APROVACAO' && <div className="detail-actions"><button className="primary-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'CONFIRMADA', label: 'Aprovar reserva' })}>Aprovar</button><button className="danger-button" onClick={() => setPending({ kind: 'reservation', record: details, status: 'RECUSADA', label: 'Recusar reserva' })}>Recusar</button></div>}</Modal>
     <ConfirmDialog open={Boolean(pending)} title={pending?.label} message={confirmationMessage(pending?.record, pending?.label, pending?.status)} confirmLabel={pending?.label || 'Confirmar'} destructive={['CANCELADA', 'RECUSADA'].includes(pending?.status)} onCancel={() => setPending(null)} onConfirm={confirm} /><div role="status" aria-live="polite" aria-atomic="true">{success && <div className="toast">{success}</div>}</div></ResidentLayout>
 }
 

@@ -79,6 +79,7 @@ function EntityModule({ role, type }) {
   const [comment, setComment] = useState('')
   const remotePackages = remoteMode && config.collection === 'packages'
   const remoteNotices = remoteMode && config.collection === 'notices'
+  const remoteReservations = remoteMode && config.collection === 'reservations'
   // Opções de torre vêm do banco; vínculos da unidade são geridos pelo cadastro de moradores.
   // Encomenda: a unidade é escolhida entre as da torre selecionada; condomínio sem torres não pede torre.
   const packageUnitOptions = remotePackages
@@ -169,6 +170,14 @@ function EntityModule({ role, type }) {
   function requestAction(action, record, label, status) { setPendingAction({ action, record, label, status }) }
   async function confirmAction() {
     const { action, record, status } = pendingAction
+    if (remoteReservations && action === 'reservation') {
+      const ok = await runRemote(() => actions.setReservationStatusRemote(record.id, status), (message) => { setPendingAction(null); flash(message) })
+      if (!ok) return
+      setPendingAction(null)
+      setDetails(null)
+      flash(status === 'CONFIRMADA' ? 'Reserva aprovada.' : status === 'RECUSADA' ? 'Reserva recusada.' : 'Reserva cancelada.')
+      return
+    }
     if (remoteNotices && action === 'noticeDelete') {
       const ok = await runRemote(() => actions.deleteNoticeRemote(record.id), (message) => { setPendingAction(null); flash(message) })
       if (!ok) return
@@ -218,6 +227,8 @@ function EntityModule({ role, type }) {
       return buttons.map(([label, status]) => <button key={status} className="primary-button" onClick={() => requestAction('provider', record, label, status)}>{label}</button>)
     }
     if (config.collection === 'packages' && role === 'portaria' && record.status === 'AGUARDANDO_RETIRADA') return <button className="primary-button" onClick={() => requestAction('package', record, 'Confirmar retirada', 'RETIRADA')}>Confirmar retirada</button>
+    if (remoteReservations && record.status === 'AGUARDANDO_APROVACAO') return <><button className="primary-button" onClick={() => requestAction('reservation', record, 'Aprovar reserva', 'CONFIRMADA')}>Aprovar</button><button className="danger-button" onClick={() => requestAction('reservation', record, 'Recusar reserva', 'RECUSADA')}>Recusar</button><button className="danger-button" onClick={() => requestAction('reservation', record, 'Cancelar reserva', 'CANCELADA')}>Cancelar excepcionalmente</button></>
+    if (remoteReservations && record.status !== 'CONFIRMADA') return null
     if (config.collection === 'reservations' && !['CANCELADA', 'CONCLUIDA'].includes(record.status)) return <button className="danger-button" onClick={() => requestAction('reservation', record, 'Cancelar reserva', 'CANCELADA')}>Cancelar excepcionalmente</button>
     if (remoteNotices) return <><button className="secondary-button" onClick={() => startEdit(record)}>Editar</button><button className="danger-button" onClick={() => requestAction('noticeDelete', record, 'Excluir comunicado', 'EXCLUIDO')}>Excluir</button></>
     if (config.collection === 'notices') return <><button className="secondary-button" onClick={() => startEdit(record)}>Editar</button>{record.status === 'ATIVO' && <button className="danger-button" onClick={() => requestAction('notice', record, 'Encerrar comunicado', 'ENCERRADO')}>Encerrar</button>}</>
